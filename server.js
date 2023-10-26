@@ -328,3 +328,10 @@ function eventsHandler(request, response, next) {
 app.get("/api/sse", eventsHandler);
 // app.post("/api/sse", postHandler);
 app.post("/api/addToCart", addToCart);
+
+app.get("/api/status", function (request, response, next) {
+  console.log("ready");
+  response.json({
+    message: "ready",
+  });
+});
