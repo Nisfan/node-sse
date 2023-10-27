@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import EventEmitter from "events";
 import { Redis } from "ioredis";
+import { Mutex } from "async-mutex";
 
 import { Cart, SimplurConfig } from "@simplur/netlify-functions-helper";
 import "dotenv/config";
@@ -22,6 +23,7 @@ const redisPort = 6379;
 
 const stream = new EventEmitter();
 const redis = new Redis(redisPort, redisHost); // 192.168.1.1:6379
+const mutex = new Mutex(); // creates a shared mutex instance
 
 SimplurConfig.initialize({
   wpUrl: process.env.WP_URL,
@@ -166,113 +168,123 @@ stream.on("addToCart", async function (data) {
     console.log("cartResponse", cartResponse);
 
     if (cartResponse.wooSessionId) {
-      const oldCart = await getCart(data.cartSessionId);
-      console.log("oldCart", oldCart);
-      if (oldCart && oldCart.version !== data.cartVersion) {
-        await redis.del(data.cartSessionId);
-        throw new CartError("VersionUpdate", "Cart version is changed");
-      }
+      mutex.runExclusive(async () => {
+        const oldCart = await getCart(data.cartSessionId);
+        console.log("oldCart", oldCart);
+        if (oldCart && oldCart.version !== data.cartVersion) {
+          await redis.del(data.cartSessionId);
+          throw new CartError("VersionUpdate", "Cart version is changed");
+        }
 
-      const cartPayload = {
-        subtotal: cartResponse.subtotal,
-        totalDiscount: cartResponse.totalDiscount,
-        coupons: cartResponse.appliedCoupons,
-        wooSessionId: cartResponse.wooSessionId,
-      };
+        const cartPayload = {
+          subtotal: cartResponse.subtotal,
+          totalDiscount: cartResponse.totalDiscount,
+          coupons: cartResponse.appliedCoupons,
+          wooSessionId: cartResponse.wooSessionId,
+        };
 
-      const newCart = {
-        ...oldCart,
-        ...cartPayload,
-        sessionId,
-        wooSessionId: data.wooSessionId,
-      };
+        const newCart = {
+          ...oldCart,
+          ...cartPayload,
+          sessionId,
+          wooSessionId: data.wooSessionId,
+        };
 
-      const expiresIn = getExpiresIn(data.wooSessionId);
-      await redis.set(
-        data.cartSessionId,
-        JSON.stringify(newCart),
-        "EX",
-        expiresIn,
-      );
-
-      const { cartItem } = cartResponse;
-
-      const newCartItem = {
-        cartId: cartItem.cartId,
-        quantity: cartItem.quantity,
-        price: cartItem.price,
-        stockQuantity: cartItem.stockQuantity,
-        stockStatus: cartItem.stockStatus,
-        // backordersAllowed: cartItem.backordersAllowed,
-        width: cartItem.width,
-        height: cartItem.height,
-        length: cartItem.length,
-        weight: cartItem.weight,
-        variation: cartItemToAdd.variation,
-      };
-
-      const cartItems = await getCartItems(data.cartItemSessionId);
-      const dbId = cartItemToAdd.variation
-        ? cartItemToAdd.variation.databaseId
-        : cartItemToAdd.id;
-
-      let cachedCartItem = null;
-      if (data.cartItem.type === "VARIABLE") {
-        cachedCartItem = cartItems.find(
-          (ci) => ci.type === idType && ci.variation?.databaseId === dbId,
+        const expiresIn = getExpiresIn(data.wooSessionId);
+        await redis.set(
+          data.cartSessionId,
+          JSON.stringify(newCart),
+          "EX",
+          expiresIn,
         );
-      } else {
-        cachedCartItem = cartItems.find((ci) => ci.id === dbId);
-      }
 
-      if (!cachedCartItem) {
-        throw Error(`Invalid cart item ${dbId}`);
-      }
+        const { cartItem } = cartResponse;
 
-      const updatedCartItem = Object.assign({}, cachedCartItem, newCartItem);
+        const newCartItem = {
+          cartId: cartItem.cartId,
+          quantity: cartItem.quantity,
+          price: cartItem.price,
+          stockQuantity: cartItem.stockQuantity,
+          stockStatus: cartItem.stockStatus,
+          // backordersAllowed: cartItem.backordersAllowed,
+          width: cartItem.width,
+          height: cartItem.height,
+          length: cartItem.length,
+          weight: cartItem.weight,
+          variation: cartItemToAdd.variation,
+        };
 
-      let newCartitems = null;
-      if (cartItemToAdd.type === "VARIABLE") {
-        newCartitems = cartItems.filter(
-          (ci) => ci.type === idType && ci.variation?.databaseId !== dbId,
+        const cartItems = await getCartItems(data.cartItemSessionId);
+
+        const dbId = cartItemToAdd.variation
+          ? cartItemToAdd.variation.databaseId
+          : cartItemToAdd.id;
+
+        let cachedCartItem = null;
+        if (data.cartItem.type === "VARIABLE") {
+          cachedCartItem = cartItems.find(
+            (ci) => ci.type === idType && ci.variation?.databaseId === dbId,
+          );
+        } else {
+          cachedCartItem = cartItems.find((ci) => ci.id === dbId);
+        }
+
+        if (!cachedCartItem) {
+          throw Error(`Invalid cart item ${dbId}`);
+        }
+
+        const updatedCartItem = Object.assign({}, cachedCartItem, newCartItem);
+
+        let newCartitems = null;
+        if (cartItemToAdd.type === "VARIABLE") {
+          newCartitems = cartItems.filter(
+            (ci) => ci.type === idType && ci.variation?.databaseId !== dbId,
+          );
+        } else {
+          newCartitems = cartItems.filter((ci) => ci.id !== dbId);
+        }
+
+        newCartitems.push(updatedCartItem);
+
+        await redis.set(
+          data.cartItemSessionId,
+          JSON.stringify(newCartitems),
+          "EX",
+          expiresIn,
         );
-      } else {
-        newCartitems = cartItems.filter((ci) => ci.id !== dbId);
-      }
 
-      newCartitems.push(updatedCartItem);
+        await redis.set(
+          data.cartItemCountSessionId,
+          newCartitems.length,
+          "EX",
+          expiresIn,
+        );
 
-      await redis.set(
-        data.cartItemSessionId,
-        JSON.stringify(newCartitems),
-        "EX",
-        expiresIn,
-      );
+        await resetShippingCharges(sessionId, cartItems);
 
-      await redis.set(
-        data.cartItemCountSessionId,
-        newCartitems.length,
-        "EX",
-        expiresIn,
-      );
-
-      await resetShippingCharges(sessionId, cartItems);
-
-      stream.emit("channel", sessionId, {
-        type: "addToCart",
-        message: "Add to cart is completed successfully!",
-        cartItem: {
-          name: updatedCartItem.name,
-        },
+        stream.emit("channel", sessionId, {
+          type: "addToCart",
+          message: "Add to cart is completed successfully!",
+          cartItem: {
+            name: updatedCartItem.name,
+          },
+        });
       });
     }
   } catch (err) {
+    await removeCartItem({
+      sessionId: data.sessionId,
+      wooSessionId: data.wooSessionId,
+      cartItem: data.cartItem,
+      cartSessionId: data.cartSessionId,
+      cartItemSessionId: data.cartItemSessionId,
+      cartItemCountSessionId: data.cartItemCountSessionId,
+    });
+
     stream.emit("channel", sessionId, {
       type: "Error",
       message: err.message,
     });
-
-    //TODO: Remove the product from session
   }
 });
 
@@ -324,48 +336,54 @@ stream.on("clearCart", async (payload) => {
   }
 });
 
-stream.on("removeCart", async (payload) => {
-  console.log("evenEmitter.removeCart.payload", payload);
-
+const removeCartItem = async (payload) => {
   const cart = new Cart();
 
   const sessionId = payload.sessionId;
   const wooSessionId = payload.wooSessionId;
   const cartIdToRemove = payload.cartItem.cartId;
 
-  const cartSessionData = await redis.get(payload.cartSessionId);
-  const cartItems = await getCartItems(payload.cartItemSessionId);
+  return await mutex.runExclusive(async () => {
+    const cartSessionData = await redis.get(payload.cartSessionId);
+    const cartItems = await getCartItems(payload.cartItemSessionId);
 
-  const response = await cart.removeCartItem(
-    sessionId,
-    wooSessionId,
-    cartSessionData.paymentIntentId,
-    cartIdToRemove,
-  );
+    const response = await cart.removeCartItem(
+      sessionId,
+      wooSessionId,
+      cartSessionData.paymentIntentId,
+      cartIdToRemove,
+    );
 
-  if (response) {
-    if (response.clearCart) {
-      await Promise.all([
-        cart.clearCart(null, wooSessionId),
-        await clearCartSessionData(
-          payload.cartSessionId,
-          wooSessionId,
-          payload.cartItemSessionId,
-          payload.cartItemCountSessionId,
-        ),
-      ]);
-    } else {
-      const appliedCoupons = getFormattedCoupons(response.appliedCoupons);
+    if (response) {
+      if (response.clearCart) {
+        await Promise.all([
+          cart.clearCart(null, wooSessionId),
+          await clearCartSessionData(
+            payload.cartSessionId,
+            wooSessionId,
+            payload.cartItemSessionId,
+            payload.cartItemCountSessionId,
+          ),
+        ]);
+      } else {
+        const appliedCoupons = getFormattedCoupons(response.appliedCoupons);
 
-      await setCartSessionData(payload.cartSessionId, wooSessionId, {
-        coupons: appliedCoupons,
-        subtotal: response.subtotal,
-        totalDiscount: response.totalDiscount,
-      });
+        await setCartSessionData(payload.cartSessionId, wooSessionId, {
+          coupons: appliedCoupons,
+          subtotal: response.subtotal,
+          totalDiscount: response.totalDiscount,
+        });
+      }
+
+      await resetShippingCharges(sessionId, cartItems);
     }
+  });
+};
 
-    await resetShippingCharges(sessionId, cartItems);
-  }
+stream.on("removeCart", async (payload) => {
+  console.log("evenEmitter.removeCart.payload", payload);
+
+  await removeCartItem(payload);
 });
 
 // function postHandler(request, response, next) {
@@ -376,7 +394,7 @@ stream.on("removeCart", async (payload) => {
 //   response.json(payload);
 // }
 
-async function addToCart(request, response, next) {
+async function addToCartHandler(request, response, next) {
   const payload = request.body;
   console.log("addToCart.payload", payload);
 
@@ -389,7 +407,7 @@ async function addToCart(request, response, next) {
   // const cartItems = await redis.get(payload.cartItemSessionId)
 }
 
-async function removeCart(request, response, next) {
+async function removeCartHandler(request, response, next) {
   const payload = request.body;
   console.log("removeCart.payload", payload);
 
@@ -402,7 +420,7 @@ async function removeCart(request, response, next) {
   // const cartItems = await redis.get(payload.cartItemSessionId)
 }
 
-async function clearCart(request, response, next) {
+async function clearCartHandler(request, response, next) {
   const payload = request.body;
   console.log("clearCart.payload", payload);
 
@@ -445,9 +463,9 @@ function eventsHandler(request, response, next) {
 
 app.get("/api/sse", eventsHandler);
 // app.post("/api/sse", postHandler);
-app.post("/api/addToCart", addToCart);
-app.post("/api/removeCart", removeCart);
-app.post("/api/clearCart", clearCart);
+app.post("/api/addToCart", addToCartHandler);
+app.post("/api/removeCart", removeCartHandler);
+app.post("/api/clearCart", clearCartHandler);
 
 app.get("/api/status", function (request, response, next) {
   console.log("ready");
