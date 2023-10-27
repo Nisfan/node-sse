@@ -259,7 +259,7 @@ stream.on("addToCart", async function (data) {
       await resetShippingCharges(sessionId, cartItems);
 
       stream.emit("channel", sessionId, {
-        type: "AddToCart",
+        type: "addToCart",
         message: "Add to cart is completed successfully!",
         cartItem: {
           name: updatedCartItem.name,
@@ -276,6 +276,98 @@ stream.on("addToCart", async function (data) {
   }
 });
 
+async function clearCartSessionData(
+  cartSessionId,
+  wooSessionId,
+  cartItemSessionId,
+  cartItemCountSessionId,
+) {
+  const expiresIn = getExpiresIn(wooSessionId);
+
+  const cartPayload = {
+    coupons: [],
+    subtotal: 0,
+    totalDiscount: 0,
+  };
+
+  await Promise.all([]);
+  await redis.set(cartSessionId, JSON.stringify(cartPayload), "EX", expiresIn);
+
+  await redis.del(cartItemSessionId);
+  await redis.del(cartItemCountSessionId);
+}
+
+function getFormattedCoupons(appliedCoupons = []) {
+  return appliedCoupons.map((c) => ({
+    code: c.code,
+    amount: c.discountAmount,
+  }));
+}
+
+function setCartSessionData(sessionId, wooSessionId, payload) {
+  const expiresIn = getExpiresIn(wooSessionId);
+
+  return redis.set(sessionId, JSON.stringify(payload), "EX", expiresIn);
+}
+
+stream.on("clearCart", async (payload) => {
+  console.log("evenEmitter.clearCart.payload", payload);
+  const cart = new Cart();
+
+  const { sessionId, wooSessionId, cartItem } = payload;
+
+  try {
+    await cart.clearCart(sessionId, wooSessionId);
+  } catch (error) {
+    //TODO: I must add `cartItem` to session based on error
+    console.error(error);
+  }
+});
+
+stream.on("removeCart", async (payload) => {
+  console.log("evenEmitter.removeCart.payload", payload);
+
+  const cart = new Cart();
+
+  const sessionId = payload.sessionId;
+  const wooSessionId = payload.wooSessionId;
+  const cartIdToRemove = payload.cartItem.cartId;
+
+  const cartSessionData = await redis.get(payload.cartSessionId);
+  const cartItems = await getCartItems(payload.cartItemSessionId);
+
+  const response = await cart.removeCartItem(
+    sessionId,
+    wooSessionId,
+    cartSessionData.paymentIntentId,
+    cartIdToRemove,
+  );
+
+  if (response) {
+    if (response.clearCart) {
+      await Promise.all([
+        cart.clearCart(null, wooSessionId),
+        await clearCartSessionData(
+          payload.cartSessionId,
+          wooSessionId,
+          payload.cartItemSessionId,
+          payload.cartItemCountSessionId,
+        ),
+      ]);
+    } else {
+      const appliedCoupons = getFormattedCoupons(response.appliedCoupons);
+
+      await setCartSessionData(payload.cartSessionId, wooSessionId, {
+        coupons: appliedCoupons,
+        subtotal: response.subtotal,
+        totalDiscount: response.totalDiscount,
+      });
+    }
+
+    await resetShippingCharges(sessionId, cartItems);
+  }
+});
+
 // function postHandler(request, response, next) {
 //   console.log("Cookies: ", request.cookies);
 //   const payload = request.body;
@@ -289,6 +381,32 @@ async function addToCart(request, response, next) {
   console.log("addToCart.payload", payload);
 
   stream.emit("addToCart", payload);
+
+  response.json({
+    error: null,
+    success: true,
+  });
+  // const cartItems = await redis.get(payload.cartItemSessionId)
+}
+
+async function removeCart(request, response, next) {
+  const payload = request.body;
+  console.log("removeCart.payload", payload);
+
+  stream.emit("removeCart", payload);
+
+  response.json({
+    error: null,
+    success: true,
+  });
+  // const cartItems = await redis.get(payload.cartItemSessionId)
+}
+
+async function clearCart(request, response, next) {
+  const payload = request.body;
+  console.log("clearCart.payload", payload);
+
+  stream.emit("clearCart", payload);
 
   response.json({
     error: null,
@@ -328,6 +446,8 @@ function eventsHandler(request, response, next) {
 app.get("/api/sse", eventsHandler);
 // app.post("/api/sse", postHandler);
 app.post("/api/addToCart", addToCart);
+app.post("/api/removeCart", removeCart);
+app.post("/api/clearCart", clearCart);
 
 app.get("/api/status", function (request, response, next) {
   console.log("ready");
