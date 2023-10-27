@@ -171,6 +171,7 @@ stream.on("addToCart", async function (data) {
       mutex.runExclusive(async () => {
         const oldCart = await getCart(data.cartSessionId);
         console.log("oldCart", oldCart);
+
         if (oldCart && oldCart.version !== data.cartVersion) {
           await redis.del(data.cartSessionId);
           throw new CartError("VersionUpdate", "Cart version is changed");
@@ -188,6 +189,7 @@ stream.on("addToCart", async function (data) {
           ...cartPayload,
           sessionId,
           wooSessionId: data.wooSessionId,
+          version: data.cartVersion,
         };
 
         const expiresIn = getExpiresIn(data.wooSessionId);
@@ -300,9 +302,9 @@ async function clearCartSessionData(
     coupons: [],
     subtotal: 0,
     totalDiscount: 0,
+    at: Date.now(),
   };
 
-  await Promise.all([]);
   await redis.set(cartSessionId, JSON.stringify(cartPayload), "EX", expiresIn);
 
   await redis.del(cartItemSessionId);
