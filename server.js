@@ -23,6 +23,7 @@ const redisPort = 6379;
 
 const stream = new EventEmitter();
 const redis = new Redis(redisPort, redisHost); // 192.168.1.1:6379
+const sub = new Redis(redisPort, redisHost); // 192.168.1.1:6379
 const mutex = new Mutex(); // creates a shared mutex instance
 
 SimplurConfig.initialize({
@@ -49,6 +50,32 @@ app.listen(PORT, () => {
   console.log(`Events service listening at http://localhost:${PORT}`);
 });
 
+sub.subscribe("addToCart", "removeCart", (err, count) => {
+  if (err) {
+    // Just like other commands, subscribe() can fail for some reasons,
+    // ex network issues.
+    console.error("Failed to subscribe: %s", err.message);
+  } else {
+    // `count` represents the number of channels this client are currently subscribed to.
+    console.log(
+      `Subscribed successfully! This client is currently subscribed to ${count} channels.`,
+    );
+  }
+});
+
+sub.on("message", async (channel, message) => {
+  console.log(`Received ${message} from ${channel}`);
+  const payload = JSON.parse(message);
+  switch (channel) {
+    case "addToCart":
+      await addToCartMutation(payload);
+      break;
+    case "removeCart":
+      await removeCartItemMutation(payload);
+      break;
+  }
+});
+
 async function getCart(cartSessionId) {
   const cart = await redis.get(cartSessionId);
   if (cart) {
@@ -57,14 +84,14 @@ async function getCart(cartSessionId) {
   return null;
 }
 
-class CartError extends Error {
-  type;
-
-  constructor(type, message) {
-    super(message);
-    this.type = type;
-  }
-}
+// class CartError extends Error {
+//   type;
+//
+//   constructor(type, message) {
+//     super(message);
+//     this.type = type;
+//   }
+// }
 
 async function getCartItems(cartItemSessionId) {
   const cartItemJSON = await redis.get(cartItemSessionId);
@@ -130,7 +157,7 @@ function getExpiresIn(wooSessionId) {
   return jwtPayload.exp - currentTime;
 }
 
-stream.on("addToCart", async function (data) {
+async function addToCartMutation(data) {
   console.log("evenEmitter.addToCart.payload", data);
 
   const sessionId = data.sessionId;
@@ -169,36 +196,10 @@ stream.on("addToCart", async function (data) {
 
     if (cartResponse.wooSessionId) {
       mutex.runExclusive(async () => {
-        const oldCart = await getCart(data.cartSessionId);
-        console.log("oldCart", oldCart);
-
-        if (oldCart && oldCart.version !== data.cartVersion) {
-          await redis.del(data.cartSessionId);
-          throw new CartError("VersionUpdate", "Cart version is changed");
-        }
-
-        const cartPayload = {
-          subtotal: cartResponse.subtotal,
-          totalDiscount: cartResponse.totalDiscount,
-          coupons: cartResponse.appliedCoupons,
-          wooSessionId: cartResponse.wooSessionId,
-        };
-
-        const newCart = {
-          ...oldCart,
-          ...cartPayload,
-          sessionId,
-          wooSessionId: data.wooSessionId,
-          version: data.cartVersion,
-        };
-
-        const expiresIn = getExpiresIn(data.wooSessionId);
-        await redis.set(
-          data.cartSessionId,
-          JSON.stringify(newCart),
-          "EX",
-          expiresIn,
-        );
+        // if (oldCart && oldCart.version !== data.cartVersion) {
+        //   await redis.del(data.cartSessionId);
+        //   throw new CartError("VersionUpdate", "Cart version is changed");
+        // }
 
         const { cartItem } = cartResponse;
 
@@ -216,79 +217,142 @@ stream.on("addToCart", async function (data) {
           variation: cartItemToAdd.variation,
         };
 
-        const cartItems = await getCartItems(data.cartItemSessionId);
+        while (true) {
+          try {
+            await redis.watch(data.cartItemSessionId);
 
-        const dbId = cartItemToAdd.variation
-          ? cartItemToAdd.variation.databaseId
-          : cartItemToAdd.id;
+            const cartItems = await getCartItems(data.cartItemSessionId);
 
-        let cachedCartItem = null;
-        if (data.cartItem.type === "VARIABLE") {
-          cachedCartItem = cartItems.find(
-            (ci) => ci.type === idType && ci.variation?.databaseId === dbId,
-          );
-        } else {
-          cachedCartItem = cartItems.find((ci) => ci.id === dbId);
+            const dbId = cartItemToAdd.variation
+              ? cartItemToAdd.variation.databaseId
+              : cartItemToAdd.id;
+
+            let cachedCartItem = null;
+            if (data.cartItem.type === "VARIABLE") {
+              cachedCartItem = cartItems.find(
+                (ci) => ci.type === idType && ci.variation?.databaseId === dbId,
+              );
+            } else {
+              cachedCartItem = cartItems.find((ci) => ci.id === dbId);
+            }
+
+            if (!cachedCartItem) {
+              throw Error(`Invalid cart item ${dbId}`);
+            }
+
+            const updatedCartItem = Object.assign(
+              {},
+              cachedCartItem,
+              newCartItem,
+            );
+
+            let newCartitems = null;
+            if (cartItemToAdd.type === "VARIABLE") {
+              newCartitems = cartItems.filter(
+                (ci) => ci.type === idType && ci.variation?.databaseId !== dbId,
+              );
+            } else {
+              newCartitems = cartItems.filter((ci) => ci.id !== dbId);
+            }
+
+            newCartitems.push(updatedCartItem);
+
+            const hasProducts =
+              cartItems.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
+            const hasPricedClass =
+              cartItems.filter(
+                (ci) => ci.type === "EVENTTICKET" && ci.price > 0,
+              ).length > 0;
+
+            const expiresIn = getExpiresIn(cartResponse.wooSessionId);
+
+            const cartPayload = {
+              subtotal: cartResponse.subtotal,
+              totalDiscount: cartResponse.totalDiscount,
+              coupons: cartResponse.appliedCoupons,
+              wooSessionId: cartResponse.wooSessionId,
+            };
+
+            const oldCart = await getCart(data.cartSessionId);
+            const newCart = {
+              ...oldCart,
+              ...cartPayload,
+              sessionId,
+              wooSessionId: data.wooSessionId,
+              version: data.cartVersion,
+              hasProducts,
+              hasPricedClass,
+              shippingCharges: [],
+              shippingChargesTimeStamp: null,
+              shippingChargeFetchSuccess: false,
+            };
+
+            const results = await redis
+              .multi()
+              .set(data.cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
+              .set(
+                data.cartItemSessionId,
+                JSON.stringify(newCartitems),
+                "EX",
+                expiresIn,
+              )
+              .set(
+                data.cartItemCountSessionId,
+                newCartitems.length,
+                "EX",
+                expiresIn,
+              )
+              .exec();
+
+            if (results) {
+              console.log("Transaction was successful.");
+
+              stream.emit("channel", sessionId, {
+                type: "addToCart",
+                message: "Add to cart is completed successfully!",
+                cartItem: {
+                  name: updatedCartItem.name,
+                },
+              });
+              break;
+            } else {
+              console.log(
+                "Transaction failed due to key modification by another client. Retrying...",
+              );
+            }
+          } catch (err) {
+            console.error("AddToCart.Error:", err);
+            break;
+          } finally {
+            await redis.unwatch();
+          }
         }
-
-        if (!cachedCartItem) {
-          throw Error(`Invalid cart item ${dbId}`);
-        }
-
-        const updatedCartItem = Object.assign({}, cachedCartItem, newCartItem);
-
-        let newCartitems = null;
-        if (cartItemToAdd.type === "VARIABLE") {
-          newCartitems = cartItems.filter(
-            (ci) => ci.type === idType && ci.variation?.databaseId !== dbId,
-          );
-        } else {
-          newCartitems = cartItems.filter((ci) => ci.id !== dbId);
-        }
-
-        newCartitems.push(updatedCartItem);
-
-        await redis.set(
-          data.cartItemSessionId,
-          JSON.stringify(newCartitems),
-          "EX",
-          expiresIn,
-        );
-
-        await redis.set(
-          data.cartItemCountSessionId,
-          newCartitems.length,
-          "EX",
-          expiresIn,
-        );
-
-        await resetShippingCharges(sessionId, cartItems);
-
-        stream.emit("channel", sessionId, {
-          type: "addToCart",
-          message: "Add to cart is completed successfully!",
-          cartItem: {
-            name: updatedCartItem.name,
-          },
-        });
       });
     }
   } catch (err) {
-    await removeCartItem({
-      sessionId: data.sessionId,
-      wooSessionId: data.wooSessionId,
-      cartItem: data.cartItem,
-      cartSessionId: data.cartSessionId,
-      cartItemSessionId: data.cartItemSessionId,
-      cartItemCountSessionId: data.cartItemCountSessionId,
-    });
+    //TODO: remove cart item, note: we have to remove cart item by database id
+    // await removeCartItem({
+    //   sessionId: data.sessionId,
+    //   wooSessionId: data.wooSessionId,
+    //   cartItem: data.cartItem,
+    //   cartSessionId: data.cartSessionId,
+    //   cartItemSessionId: data.cartItemSessionId,
+    //   cartItemCountSessionId: data.cartItemCountSessionId,
+    // });
 
     stream.emit("channel", sessionId, {
       type: "Error",
       message: err.message,
     });
   }
-});
+}
+// stream.on("addToCart", async function (data) {
+//   await addToCartMutation(data);
+// });
+//
+// stream.on("removeCart", async (payload) => {
+//   await removeCartItemMutation(payload);
+// });
 
 async function clearCartSessionData(
   cartSessionId,
@@ -338,7 +402,8 @@ stream.on("clearCart", async (payload) => {
   }
 });
 
-const removeCartItem = async (payload) => {
+const removeCartItemMutation = async (payload) => {
+  console.log("evenEmitter.removeCart.payload", payload);
   const cart = new Cart();
 
   const sessionId = payload.sessionId;
@@ -346,13 +411,10 @@ const removeCartItem = async (payload) => {
   const cartIdToRemove = payload.cartItem.cartId;
 
   return await mutex.runExclusive(async () => {
-    const cartSessionData = await redis.get(payload.cartSessionId);
-    const cartItems = await getCartItems(payload.cartItemSessionId);
-
     const response = await cart.removeCartItem(
       sessionId,
       wooSessionId,
-      cartSessionData.paymentIntentId,
+      payload.paymentIntentId,
       cartIdToRemove,
     );
 
@@ -368,25 +430,69 @@ const removeCartItem = async (payload) => {
           ),
         ]);
       } else {
+        const expiresIn = getExpiresIn(wooSessionId);
         const appliedCoupons = getFormattedCoupons(response.appliedCoupons);
 
-        await setCartSessionData(payload.cartSessionId, wooSessionId, {
-          coupons: appliedCoupons,
-          subtotal: response.subtotal,
-          totalDiscount: response.totalDiscount,
-        });
-      }
+        while (true) {
+          try {
+            await redis.watch(payload.cartSessionId, payload.cartItemSessionId);
 
-      await resetShippingCharges(sessionId, cartItems);
+            const [oldCartJSON, cartItemsJSON] = await redis.mget(
+              payload.cartSessionId,
+              payload.cartItemSessionId,
+            );
+
+            const oldCart = JSON.parse(oldCartJSON);
+            const cartItems = cartItemsJSON ? JSON.parse(cartItemsJSON) : [];
+
+            const hasProducts =
+              cartItems.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
+            const hasPricedClass =
+              cartItems.filter(
+                (ci) => ci.type === "EVENTTICKET" && ci.price > 0,
+              ).length > 0;
+
+            const newCart = {
+              ...oldCart,
+              coupons: appliedCoupons,
+              subtotal: response.subtotal,
+              totalDiscount: response.totalDiscount,
+              hasProducts,
+              hasPricedClass,
+              shippingCharges: [],
+              shippingChargesTimeStamp: null,
+              shippingChargeFetchSuccess: false,
+            };
+
+            const results = await redis
+              .multi()
+              .set(
+                payload.cartSessionId,
+                JSON.stringify(newCart),
+                "EX",
+                expiresIn,
+              )
+              .exec();
+
+            if (results) {
+              console.log("Transaction was successful.");
+              break;
+            } else {
+              console.log(
+                "Transaction failed due to key modification by another client. Retrying...",
+              );
+            }
+          } catch (err) {
+            console.log("RemoveCart.Error:", err);
+            break;
+          } finally {
+            redis.unwatch();
+          }
+        }
+      }
     }
   });
 };
-
-stream.on("removeCart", async (payload) => {
-  console.log("evenEmitter.removeCart.payload", payload);
-
-  await removeCartItem(payload);
-});
 
 // function postHandler(request, response, next) {
 //   console.log("Cookies: ", request.cookies);
@@ -396,31 +502,29 @@ stream.on("removeCart", async (payload) => {
 //   response.json(payload);
 // }
 
-async function addToCartHandler(request, response, next) {
-  const payload = request.body;
-  console.log("addToCart.payload", payload);
-
-  stream.emit("addToCart", payload);
-
-  response.json({
-    error: null,
-    success: true,
-  });
-  // const cartItems = await redis.get(payload.cartItemSessionId)
-}
-
-async function removeCartHandler(request, response, next) {
-  const payload = request.body;
-  console.log("removeCart.payload", payload);
-
-  stream.emit("removeCart", payload);
-
-  response.json({
-    error: null,
-    success: true,
-  });
-  // const cartItems = await redis.get(payload.cartItemSessionId)
-}
+// async function addToCartHandler(request, response, next) {
+//   const payload = request.body;
+//   console.log("addToCart.payload", payload);
+//
+//   stream.emit("addToCart", payload);
+//
+//   response.json({
+//     error: null,
+//     success: true,
+//   });
+// }
+//
+// async function removeCartHandler(request, response, next) {
+//   const payload = request.body;
+//   console.log("removeCart.payload", payload);
+//
+//   stream.emit("removeCart", payload);
+//
+//   response.json({
+//     error: null,
+//     success: true,
+//   });
+// }
 
 async function clearCartHandler(request, response, next) {
   const payload = request.body;
@@ -465,8 +569,8 @@ function eventsHandler(request, response, next) {
 
 app.get("/api/sse", eventsHandler);
 // app.post("/api/sse", postHandler);
-app.post("/api/addToCart", addToCartHandler);
-app.post("/api/removeCart", removeCartHandler);
+// app.post("/api/addToCart", addToCartHandler);
+// app.post("/api/removeCart", removeCartHandler);
 app.post("/api/clearCart", clearCartHandler);
 
 app.get("/api/status", function (request, response, next) {
