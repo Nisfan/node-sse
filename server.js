@@ -23,7 +23,7 @@ const redisPort = 6379;
 
 const stream = new EventEmitter();
 const redis = new Redis(redisPort, redisHost); // 192.168.1.1:6379
-const sub = new Redis(redisPort, redisHost); // 192.168.1.1:6379
+// const sub = new Redis(redisPort, redisHost); // 192.168.1.1:6379
 const mutex = new Mutex(); // creates a shared mutex instance
 
 SimplurConfig.initialize({
@@ -50,31 +50,31 @@ app.listen(PORT, () => {
   console.log(`Events service listening at http://localhost:${PORT}`);
 });
 
-sub.subscribe("addToCart", "removeCart", (err, count) => {
-  if (err) {
-    // Just like other commands, subscribe() can fail for some reasons,
-    // ex network issues.
-    console.error("Failed to subscribe: %s", err.message);
-  } else {
-    // `count` represents the number of channels this client are currently subscribed to.
-    console.log(
-      `Subscribed successfully! This client is currently subscribed to ${count} channels.`,
-    );
-  }
-});
-
-sub.on("message", async (channel, message) => {
-  console.log(`Received ${message} from ${channel}`);
-  const payload = JSON.parse(message);
-  switch (channel) {
-    case "addToCart":
-      await addToCartMutation(payload);
-      break;
-    case "removeCart":
-      await removeCartItemMutation(payload);
-      break;
-  }
-});
+// sub.subscribe("addToCart", "removeCart", (err, count) => {
+//   if (err) {
+//     // Just like other commands, subscribe() can fail for some reasons,
+//     // ex network issues.
+//     console.error("Failed to subscribe: %s", err.message);
+//   } else {
+//     // `count` represents the number of channels this client are currently subscribed to.
+//     console.log(
+//       `Subscribed successfully! This client is currently subscribed to ${count} channels.`,
+//     );
+//   }
+// });
+//
+// sub.on("message", async (channel, message) => {
+//   console.log(`Received ${message} from ${channel}`);
+//   const payload = JSON.parse(message);
+//   switch (channel) {
+//     case "addToCart":
+//       await addToCartMutation(payload);
+//       break;
+//     case "removeCart":
+//       await removeCartItemMutation(payload);
+//       break;
+//   }
+// });
 
 async function getCart(cartSessionId) {
   const cart = await redis.get(cartSessionId);
@@ -346,13 +346,14 @@ async function addToCartMutation(data) {
     });
   }
 }
-// stream.on("addToCart", async function (data) {
-//   await addToCartMutation(data);
-// });
-//
-// stream.on("removeCart", async (payload) => {
-//   await removeCartItemMutation(payload);
-// });
+
+stream.on("addToCart", async function (data) {
+  await addToCartMutation(data);
+});
+
+stream.on("removeCart", async (payload) => {
+  await removeCartItemMutation(payload);
+});
 
 async function clearCartSessionData(
   cartSessionId,
@@ -380,12 +381,6 @@ function getFormattedCoupons(appliedCoupons = []) {
     code: c.code,
     amount: c.discountAmount,
   }));
-}
-
-function setCartSessionData(sessionId, wooSessionId, payload) {
-  const expiresIn = getExpiresIn(wooSessionId);
-
-  return redis.set(sessionId, JSON.stringify(payload), "EX", expiresIn);
 }
 
 stream.on("clearCart", async (payload) => {
@@ -502,29 +497,29 @@ const removeCartItemMutation = async (payload) => {
 //   response.json(payload);
 // }
 
-// async function addToCartHandler(request, response, next) {
-//   const payload = request.body;
-//   console.log("addToCart.payload", payload);
-//
-//   stream.emit("addToCart", payload);
-//
-//   response.json({
-//     error: null,
-//     success: true,
-//   });
-// }
-//
-// async function removeCartHandler(request, response, next) {
-//   const payload = request.body;
-//   console.log("removeCart.payload", payload);
-//
-//   stream.emit("removeCart", payload);
-//
-//   response.json({
-//     error: null,
-//     success: true,
-//   });
-// }
+async function addToCartHandler(request, response, next) {
+  const payload = request.body;
+  console.log("addToCart.payload", payload);
+
+  stream.emit("addToCart", payload);
+
+  response.json({
+    error: null,
+    success: true,
+  });
+}
+
+async function removeCartHandler(request, response, next) {
+  const payload = request.body;
+  console.log("removeCart.payload", payload);
+
+  stream.emit("removeCart", payload);
+
+  response.json({
+    error: null,
+    success: true,
+  });
+}
 
 async function clearCartHandler(request, response, next) {
   const payload = request.body;
@@ -569,8 +564,8 @@ function eventsHandler(request, response, next) {
 
 app.get("/api/sse", eventsHandler);
 // app.post("/api/sse", postHandler);
-// app.post("/api/addToCart", addToCartHandler);
-// app.post("/api/removeCart", removeCartHandler);
+app.post("/api/addToCart", addToCartHandler);
+app.post("/api/removeCart", removeCartHandler);
 app.post("/api/clearCart", clearCartHandler);
 
 app.get("/api/status", function (request, response, next) {
