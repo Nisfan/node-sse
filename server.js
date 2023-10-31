@@ -237,6 +237,7 @@ async function addToCartMutation(data) {
             }
 
             if (!cachedCartItem) {
+              console.log("cartItems", cartItems);
               throw Error(`Invalid cart item ${dbId}`);
             }
 
@@ -310,8 +311,13 @@ async function addToCartMutation(data) {
               stream.emit("channel", sessionId, {
                 type: "addToCart",
                 message: "Add to cart is completed successfully!",
+                cart: newCart,
                 cartItem: {
+                  cartId: updatedCartItem.cartId,
+                  id: updatedCartItem.id,
+                  slug: updatedCartItem.slug,
                   name: updatedCartItem.name,
+                  variation: updatedCartItem.variation,
                 },
               });
               break;
@@ -387,10 +393,29 @@ stream.on("clearCart", async (payload) => {
   console.log("evenEmitter.clearCart.payload", payload);
   const cart = new Cart();
 
-  const { sessionId, wooSessionId, cartItem } = payload;
+  const { sessionId, cartSessionId, wooSessionId, cartItem } = payload;
+
+  const oldCartJSON = await redis.get(cartSessionId);
+  console.log("clearCart.oldCartJSON", oldCartJSON);
+
+  let cartSessionData = {};
+  if (oldCartJSON) {
+    cartSessionData = JSON.parse(oldCartJSON);
+  }
 
   try {
     await cart.clearCart(sessionId, wooSessionId);
+
+    if (cartItem) {
+      stream.emit("channel", sessionId, {
+        type: "removeCart",
+        message: "The item is removed from cart successfully!",
+        cart: cartSessionData,
+        cartItem: {
+          cartId: cartItem.cartId,
+        },
+      });
+    }
   } catch (error) {
     //TODO: I must add `cartItem` to session based on error
     console.error(error);
@@ -471,6 +496,15 @@ const removeCartItemMutation = async (payload) => {
 
             if (results) {
               console.log("Transaction was successful.");
+
+              stream.emit("channel", sessionId, {
+                type: "removeCart",
+                message: "The item is removed from cart successfully!",
+                cart: newCart,
+                cartItem: {
+                  cartId: payload.cartItem.cartId,
+                },
+              });
               break;
             } else {
               console.log(
