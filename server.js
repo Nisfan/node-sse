@@ -230,7 +230,8 @@ async function addToCartMutation(data) {
             let cachedCartItem = null;
             if (data.cartItem.type === "VARIABLE") {
               cachedCartItem = cartItems.find(
-                (ci) => ci.type === idType && ci.variation?.databaseId === dbId,
+                (ci) =>
+                  ci.type === "VARIABLE" && ci.variation?.databaseId === dbId,
               );
             } else {
               cachedCartItem = cartItems.find((ci) => ci.id === dbId);
@@ -250,7 +251,8 @@ async function addToCartMutation(data) {
             let newCartitems = null;
             if (cartItemToAdd.type === "VARIABLE") {
               newCartitems = cartItems.filter(
-                (ci) => ci.type === idType && ci.variation?.databaseId !== dbId,
+                (ci) =>
+                  ci.type === "VARIABLE" && ci.variation?.databaseId !== dbId,
               );
             } else {
               newCartitems = cartItems.filter((ci) => ci.id !== dbId);
@@ -258,8 +260,15 @@ async function addToCartMutation(data) {
 
             newCartitems.push(updatedCartItem);
 
+            console.log("cartItems", cartItems);
+
             const hasProducts =
               cartItems.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
+
+            const hasFreeClass =
+              cartItems.filter(
+                (ci) => ci.type === "EVENTTICKET" && ci.price === 0,
+              ).length > 0;
             const hasPricedClass =
               cartItems.filter(
                 (ci) => ci.type === "EVENTTICKET" && ci.price > 0,
@@ -283,6 +292,7 @@ async function addToCartMutation(data) {
               version: data.cartVersion,
               hasProducts,
               hasPricedClass,
+              hasFreeClass,
               shippingCharges: [],
               shippingChargesTimeStamp: null,
               shippingChargeFetchSuccess: false,
@@ -306,19 +316,13 @@ async function addToCartMutation(data) {
               .exec();
 
             if (results) {
-              console.log("Transaction was successful.");
+              console.log("Transaction was successful.", results);
 
               stream.emit("channel", sessionId, {
                 type: "addToCart",
                 message: "Add to cart is completed successfully!",
                 cart: newCart,
-                cartItem: {
-                  cartId: updatedCartItem.cartId,
-                  id: updatedCartItem.id,
-                  slug: updatedCartItem.slug,
-                  name: updatedCartItem.name,
-                  variation: updatedCartItem.variation,
-                },
+                cartItem: updatedCartItem,
               });
               break;
             } else {
