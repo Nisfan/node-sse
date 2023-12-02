@@ -144,15 +144,21 @@ async function addToCartMutation(data) {
   try {
     const cart = new Cart();
 
+    const cartItemsSessionId = `cartItems:${data.clientMutationId}`;
+    const cartSessionId = `cart:${data.clientMutationId}`;
+
+    const cartItems = await getCartItems(cartItemsSessionId);
+
     const cartItemToAdd = data.cartItem;
 
+    const paymentIntentId = cartItems.length > 0 ? data.paymentIntentId : null;
     let cartResponse = null;
     if (cartItemToAdd.variation) {
       const addToCartVariableItem = {
         databaseId: cartItemToAdd.id,
         quantity: cartItemToAdd.quantity,
         clientMutationId: data.clientMutationId,
-        paymentIntentId: data.paymentIntentId,
+        paymentIntentId: paymentIntentId,
         wooSessionId: data.wooSessionId,
         variation: cartItemToAdd.variation,
       };
@@ -163,7 +169,7 @@ async function addToCartMutation(data) {
         databaseId: cartItemToAdd.id,
         quantity: cartItemToAdd.quantity,
         clientMutationId: data.clientMutationId,
-        paymentIntentId: data.paymentIntentId,
+        paymentIntentId: paymentIntentId,
         wooSessionId: data.wooSessionId,
         manufacturerCustomFields: null,
       };
@@ -172,9 +178,6 @@ async function addToCartMutation(data) {
     }
 
     console.log("cartResponse", cartResponse);
-
-    const cartItemsSessionId = `cartItems:${data.clientMutationId}`;
-    const cartSessionId = `cart:${data.clientMutationId}`;
 
     if (cartResponse.wooSessionId) {
       // mutex.runExclusive(async () => {
@@ -190,6 +193,8 @@ async function addToCartMutation(data) {
         cartId: cartItem.cartId,
         quantity: cartItem.quantity,
         price: cartItem.price,
+        name: cartItemToAdd.name,
+        slug: cartItemToAdd.slug,
         // stockQuantity: cartItem.stockQuantity,
         // stockStatus: cartItem.stockStatus,
         backordersAllowed: cartItem.backordersAllowed,
@@ -201,7 +206,6 @@ async function addToCartMutation(data) {
         type: cartItemToAdd.type,
       };
 
-      const cartItems = await getCartItems(cartItemsSessionId);
       cartItems.push(newCartItem);
 
       const hasProducts =
@@ -399,7 +403,11 @@ stream.on("addToCart", async function (data) {
 });
 
 stream.on("removeCart", async (payload) => {
-  await removeCartItemMutation(payload);
+  try {
+    await removeCartItemMutation(payload);
+  } catch (err) {
+    console.error(err);
+  }
 });
 
 async function clearCartSessionData(
