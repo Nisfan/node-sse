@@ -208,6 +208,10 @@ async function addToCartMutation(data) {
 
       cartItems.push(newCartItem);
 
+      const taxPercentage = 0.0775;
+      const total = cartResponse.subtotal - cartResponse.totalDiscount;
+      const taxValue = Math.round(total * taxPercentage * 100) / 100;
+
       const hasProducts =
         cartItems.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
 
@@ -225,6 +229,7 @@ async function addToCartMutation(data) {
         coupons: cartResponse.appliedCoupons,
         totalDiscount: cartResponse.totalDiscount,
         subtotal: cartResponse.subtotal,
+        taxValue,
         hasProducts,
         hasPricedClass,
         hasFreeClass,
