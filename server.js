@@ -141,15 +141,14 @@ function getExpiresIn(wooSessionId) {
 async function addToCartMutation(data) {
   console.log("evenEmitter.addToCart.payload", data);
 
+  const cart = new Cart();
+  const cartItemToAdd = data.cartItem;
+
+  const cartItemsSessionId = `cartItems:${data.clientMutationId}`;
+  const cartSessionId = `cart:${data.clientMutationId}`;
+
   try {
-    const cart = new Cart();
-
-    const cartItemsSessionId = `cartItems:${data.clientMutationId}`;
-    const cartSessionId = `cart:${data.clientMutationId}`;
-
     const cartItems = await getCartItems(cartItemsSessionId);
-
-    const cartItemToAdd = data.cartItem;
 
     const paymentIntentId = cartItems.length > 0 ? data.paymentIntentId : null;
     let cartResponse = null;
@@ -254,7 +253,7 @@ async function addToCartMutation(data) {
 
         stream.emit("channel", data.clientMutationId, {
           type: "addToCart",
-          message: "Add to cart is completed successfully!",
+          message: `The product ${newCartItem.name} is added to cart successfully!`,
           cart: newCart,
           cartItem: newCartItem,
         });
@@ -265,8 +264,12 @@ async function addToCartMutation(data) {
         );
 
         stream.emit("channel", data.clientMutationId, {
-          type: "Error",
+          type: "addToCart",
           message: "Add to cart failed",
+          error: results,
+          cartItem: {
+            id: cartItemToAdd.id,
+          },
         });
       }
 
@@ -397,8 +400,12 @@ async function addToCartMutation(data) {
     // });
 
     stream.emit("channel", data.clientMutationId, {
-      type: "Error",
+      type: "addToCart",
       message: err.message,
+      error: err,
+      cartItem: {
+        id: cartItemToAdd.id,
+      },
     });
   }
 }
