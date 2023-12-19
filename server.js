@@ -749,10 +749,10 @@ function eventsHandler(request, response, next) {
 
   const clientId = Date.now();
 
-  request.on("close", () => {
-    console.log(`${clientId} Connection closed`);
-    // response.end();
-  });
+  // request.on("close", () => {
+  //   console.log(`${clientId} Connection closed`);
+  //   // response.end();
+  // });
 }
 
 app.get("/api/sse", eventsHandler);
