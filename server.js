@@ -465,26 +465,26 @@ stream.on("removeCart", async (payload) => {
   }
 });
 
-async function clearCartSessionData(
-  cartSessionId,
-  wooSessionId,
-  cartItemSessionId,
-  cartItemCountSessionId,
-) {
-  const expiresIn = getExpiresIn(wooSessionId);
-
-  const cartPayload = {
-    coupons: [],
-    subtotal: 0,
-    totalDiscount: 0,
-    at: Date.now(),
-  };
-
-  await redis.set(cartSessionId, JSON.stringify(cartPayload), "EX", expiresIn);
-
-  await redis.del(cartItemSessionId);
-  await redis.del(cartItemCountSessionId);
-}
+// async function clearCartSessionData(
+//   cartSessionId,
+//   wooSessionId,
+//   cartItemSessionId,
+//   cartItemCountSessionId,
+// ) {
+//   const expiresIn = getExpiresIn(wooSessionId);
+//
+//   const cartPayload = {
+//     coupons: [],
+//     subtotal: 0,
+//     totalDiscount: 0,
+//     at: Date.now(),
+//   };
+//
+//   await redis.set(cartSessionId, JSON.stringify(cartPayload), "EX", expiresIn);
+//
+//   await redis.del(cartItemSessionId);
+//   await redis.del(cartItemCountSessionId);
+// }
 
 function getFormattedCoupons(appliedCoupons = []) {
   return appliedCoupons.map((c) => ({
@@ -493,18 +493,18 @@ function getFormattedCoupons(appliedCoupons = []) {
   }));
 }
 
-async function clearCart(clientMutationId, wooSessionId) {
-  const cart = new Cart();
-  await cart.clearCart(clientMutationId, wooSessionId);
-
-  const cartItemsSessionId = `cartItems:${clientMutationId}`;
-  const cartSessionId = `cart:${clientMutationId}`;
-  const results = await redis
-    .multi()
-    .del(cartSessionId)
-    .del(cartItemsSessionId)
-    .exec();
-}
+// async function clearCart(clientMutationId, wooSessionId) {
+//   const cart = new Cart();
+//   await cart.clearCart(clientMutationId, wooSessionId);
+//
+//   const cartItemsSessionId = `cartItems:${clientMutationId}`;
+//   const cartSessionId = `cart:${clientMutationId}`;
+//   const results = await redis
+//     .multi()
+//     .del(cartSessionId)
+//     .del(cartItemsSessionId)
+//     .exec();
+// }
 
 // stream.on("clearCart", async (payload) => {
 //   console.log("evenEmitter.clearCart.payload", payload);
@@ -714,18 +714,18 @@ async function removeCartHandler(request, response, next) {
   });
 }
 
-async function clearCartHandler(request, response, next) {
-  const payload = request.body;
-  console.log("clearCart.payload", payload);
-
-  stream.emit("clearCart", payload);
-
-  response.json({
-    error: null,
-    success: true,
-  });
-  // const cartItems = await redis.get(payload.cartItemSessionId)
-}
+// async function clearCartHandler(request, response, next) {
+//   const payload = request.body;
+//   console.log("clearCart.payload", payload);
+//
+//   stream.emit("clearCart", payload);
+//
+//   response.json({
+//     error: null,
+//     success: true,
+//   });
+//   // const cartItems = await redis.get(payload.cartItemSessionId)
+// }
 
 function eventsHandler(request, response, next) {
   const headers = {
@@ -737,7 +737,8 @@ function eventsHandler(request, response, next) {
   response.writeHead(200, headers);
 
   const encoder = new TextEncoder();
-  stream.on("channel", function (event, data) {
+
+  function eventListener(event, data) {
     //res.write(JSON.stringify({ counter: data })); // NOTE: this DOES NOT work
     console.log("event", event);
     console.log("event.data", data);
@@ -745,14 +746,17 @@ function eventsHandler(request, response, next) {
     response.write(
       encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
     );
+  }
+
+  stream.on("channel", eventListener);
+
+  // const clientId = Date.now();
+
+  request.on("close", () => {
+    console.log(`Connection closed`);
+    stream.off("channel", eventListener);
+    // response.end();
   });
-
-  const clientId = Date.now();
-
-  // request.on("close", () => {
-  //   console.log(`${clientId} Connection closed`);
-  //   // response.end();
-  // });
 }
 
 app.get("/api/sse", eventsHandler);
