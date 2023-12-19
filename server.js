@@ -8,6 +8,7 @@ import { Redis } from "ioredis";
 import { Cart, SimplurConfig } from "@simplur/netlify-functions-helper";
 import "dotenv/config";
 // import session from "express-session";
+import pkg from "./package.json" assert { type: "json" };
 
 const PORT = 3003;
 const REDIS_PORT = 6379;
@@ -15,6 +16,8 @@ const REDIS_PORT = 6379;
 const app = express();
 
 console.log(process.env);
+
+console.log(`Running version v${pkg.version}`);
 
 const redisHost =
   process.env.NODE_ENV === "production" ? "127.0.0.1" : "5.161.99.138";
