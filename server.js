@@ -138,6 +138,51 @@ function getExpiresIn(wooSessionId) {
   return jwtPayload.exp - currentTime;
 }
 
+function calculateTaxValue(totalDiscount, cartItems) {
+  const taxPercentage = 0.0775;
+
+  const totalTaxableValue = cartItems
+    .filter((cartItem) => cartItem.type !== "EVENTTICKET")
+    .reduce((totalTaxableValue, cartItem) => {
+      let price = 0;
+      if (cartItem.type === "BUNDLE") {
+        if (cartItem.taxClass !== "ZERO_RATE") {
+          price = cartItem.price;
+        }
+        price += cartItem.bundleItems.reduce((bundleTaxableTotal, bItem) => {
+          let taxablePrice = 0;
+          if (bItem.type === "VARIABLE") {
+            if (bItem.taxClass !== "ZERO_RATE") {
+              taxablePrice = bItem.price;
+            }
+          } else if (bItem.taxClass !== "ZERO_RATE") {
+            taxablePrice = bItem.price;
+          }
+
+          return bundleTaxableTotal + taxablePrice;
+        }, 0);
+      } else if (cartItem.type === "VARIABLE") {
+        if (cartItem.taxClass !== "ZERO_RATE") {
+          price = cartItem.price;
+        }
+      } else if (cartItem.type === "SIMPLE") {
+        if (cartItem.taxClass !== "ZERO_RATE") {
+          price = cartItem.price;
+        }
+      }
+
+      return totalTaxableValue + price * cartItem.quantity;
+    }, 0);
+
+  if (totalTaxableValue === 0) {
+    return totalTaxableValue;
+  }
+
+  return (
+    Math.round((totalTaxableValue - totalDiscount) * taxPercentage * 100) / 100
+  );
+}
+
 async function addToCartMutation(data) {
   console.log("evenEmitter.addToCart.payload", data);
 
@@ -194,6 +239,7 @@ async function addToCartMutation(data) {
         price: cartItem.price,
         name: cartItemToAdd.name,
         slug: cartItemToAdd.slug,
+        taxClass: cartItem.taxClass,
         // stockQuantity: cartItem.stockQuantity,
         // stockStatus: cartItem.stockStatus,
         backordersAllowed: cartItem.backordersAllowed,
@@ -206,10 +252,7 @@ async function addToCartMutation(data) {
       };
 
       cartItems.push(newCartItem);
-
-      const taxPercentage = 0.0775;
-      const total = cartResponse.subtotal - cartResponse.totalDiscount;
-      const taxValue = Math.round(total * taxPercentage * 100) / 100;
+      const taxValue = calculateTaxValue(cartResponse.totalDiscount, cartItems);
 
       const hasProducts =
         cartItems.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
@@ -523,6 +566,7 @@ const removeCartItemMutation = async (payload) => {
 
   if (response) {
     if (response.clearCart) {
+      console.log("clearing cart, response:", response);
       cart.clearCart(null, wooSessionId);
 
       const results = await redis
@@ -532,29 +576,72 @@ const removeCartItemMutation = async (payload) => {
         .exec();
 
       await resetShippingCharges(clientMutationId, null);
+
+      if (results) {
+        const newCart = {
+          pi: null,
+          coupons: [],
+          subtotal: 0,
+          taxValue: 0,
+          totalDiscount: 0,
+          hasProducts: false,
+          hasPricedClass: false,
+          hasFreeClass: false,
+        };
+        stream.emit("channel", clientMutationId, {
+          type: "removeCart",
+          message: "The item is removed from cart successfully!",
+          cart: newCart,
+          cartItem: {
+            cartId: cartItemId,
+          },
+        });
+      }
     } else {
       const appliedCoupons = getFormattedCoupons(response.appliedCoupons);
 
       try {
-        const cartItems = await getCartItems(cartItemsSessionId);
+        const [cartSessionData, cartItems] = await Promise.all([
+          getCart(cartSessionId),
+          getCartItems(cartItemsSessionId),
+        ]);
         const cartItemsFilter = cartItems.filter(
           (ci) => ci.cartId !== cartItemId,
         );
 
-        const cartSessionData = await getCart(cartSessionId);
+        const taxValue = calculateTaxValue(
+          response.totalDiscount,
+          cartItemsFilter,
+        );
+        // const cartSessionData = await getCart(cartSessionId);
+
+        const hasProducts =
+          cartItemsFilter.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
+
+        const hasFreeClass =
+          cartItemsFilter.filter(
+            (ci) => ci.type === "EVENTTICKET" && ci.price === 0,
+          ).length > 0;
+
+        const hasPricedClass =
+          cartItemsFilter.filter(
+            (ci) => ci.type === "EVENTTICKET" && ci.price > 0,
+          ).length > 0;
 
         const newCart = {
           ...cartSessionData,
           coupons: appliedCoupons,
           subtotal: response.subtotal,
+          taxValue,
           totalDiscount: response.totalDiscount,
+          hasProducts: hasProducts,
+          hasPricedClass: hasPricedClass,
+          hasFreeClass: hasFreeClass,
         };
 
         if (cartItemsFilter.length === 0) {
           // newCart.wooSessionId = null;
           newCart.pi = null;
-          newCart.subtotal = 0;
-          newCart.totalDiscount = 0;
         }
 
         const expiresIn = getExpiresIn(newCart.wooSessionId);
