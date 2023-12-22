@@ -14,6 +14,7 @@ import pkg from "./package.json" assert { type: "json" };
 const PORT = 3003;
 const REDIS_PORT = 6379;
 const envFileName = `.env.${process.env.NODE_ENV || "development"}`;
+console.log("envFileName", envFileName);
 dotenv.config({ path: envFileName });
 
 const app = express();
