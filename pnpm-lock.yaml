@@ -20,6 +20,9 @@ dependencies:
   ioredis:
     specifier: ^5.3.2
     version: 5.3.2
+  isbot:
+    specifier: '4'
+    version: 4.1.0
 
 devDependencies:
   dotenv:
@@ -548,6 +551,11 @@ packages:
   /ipaddr.js@1.9.1:
     resolution: {integrity: sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==}
     engines: {node: '>= 0.10'}
+    dev: false
+
+  /isbot@4.1.0:
+    resolution: {integrity: sha512-Kz7zk1wc0oC0FYLYtqea1RKdEX4XGlqacPhoaq9HSEQamEXQNJ/MzVzBKAQXDCCHO0h/eo4CdZs9t3Jfbup5Aw==}
+    engines: {node: '>=18'}
     dev: false
 
   /lodash.defaults@4.2.0:

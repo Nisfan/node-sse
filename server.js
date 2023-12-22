@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import EventEmitter from "events";
 import { Redis } from "ioredis";
+import { isbot } from "isbot";
 // import { Mutex } from "async-mutex";
 // import RedisStore from "connect-redis";
 
@@ -756,7 +757,7 @@ function eventsHandler(request, response, next) {
   }
 
   const clientId = request.params.id;
-  if (!clients.includes(clientId)) {
+  if (!clients.includes(clientId) && !isbot(request.getHeader("User-Agent"))) {
     clients.push(clientId);
     console.log("New client client id:", clientId);
   }
