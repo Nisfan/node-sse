@@ -6,12 +6,15 @@ import { Redis } from "ioredis";
 // import RedisStore from "connect-redis";
 
 import { Cart, SimplurConfig } from "@simplur/netlify-functions-helper";
-import "dotenv/config";
+import dotenv from "dotenv";
+
 // import session from "express-session";
 import pkg from "./package.json" assert { type: "json" };
 
 const PORT = 3003;
 const REDIS_PORT = 6379;
+const envFileName = `.env.${process.env.NODE_ENV || "development"}`;
+dotenv.config({ path: envFileName });
 
 const app = express();
 
@@ -187,13 +190,14 @@ function calculateTaxValue(totalDiscount, cartItems) {
 }
 
 async function addToCartMutation(data) {
-  console.log("evenEmitter.addToCart.payload", data);
+  // console.log("evenEmitter.addToCart.payload", data);
 
   const cart = new Cart();
   const cartItemToAdd = data.cartItem;
 
   const cartItemsSessionId = `cartItems:${data.clientMutationId}`;
   const cartSessionId = `cart:${data.clientMutationId}`;
+  const checkoutSessionId = `checkout:${data.clientMutationId}`;
 
   try {
     const cartItems = await getCartItems(cartItemsSessionId);
@@ -285,6 +289,14 @@ async function addToCartMutation(data) {
       //   try {
       //     await redis.watch(data.cartItemSessionId);
       //
+      const checkout = await getCheckoutSession(data.clientMutationId);
+
+      const newCheckout = {
+        ...checkout,
+        shippingCharges: [],
+        shippingChargesTimeStamp: null,
+        shippingChargeFetchSuccess: false,
+      };
 
       const expiresIn = getExpiresIn(newCart.wooSessionId);
 
@@ -292,12 +304,11 @@ async function addToCartMutation(data) {
         .multi()
         .set(cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
         .set(cartItemsSessionId, JSON.stringify(cartItems), "EX", expiresIn)
+        .set(checkoutSessionId, JSON.stringify(newCheckout), "EX", expiresIn)
         .exec();
 
       if (results) {
-        await resetShippingCharges(data.clientMutationId, newCart);
-
-        stream.emit("channel", data.clientMutationId, {
+        stream.emit(data.clientMutationId, {
           type: "addToCart",
           message: `The product ${newCartItem.name} is added to cart successfully!`,
           cart: newCart,
@@ -309,7 +320,7 @@ async function addToCartMutation(data) {
           results,
         );
 
-        stream.emit("channel", data.clientMutationId, {
+        stream.emit(data.clientMutationId, {
           type: "addToCart",
           message: "Add to cart failed",
           error: results,
@@ -445,7 +456,7 @@ async function addToCartMutation(data) {
     //   cartItemCountSessionId: data.cartItemCountSessionId,
     // });
 
-    stream.emit("channel", data.clientMutationId, {
+    stream.emit(data.clientMutationId, {
       type: "addToCart",
       message: err.message,
       error: err,
@@ -591,7 +602,7 @@ const removeCartItemMutation = async (payload) => {
           hasPricedClass: false,
           hasFreeClass: false,
         };
-        stream.emit("channel", clientMutationId, {
+        stream.emit(clientMutationId, {
           type: "removeCart",
           message: "The item is removed from cart successfully!",
           cart: newCart,
@@ -647,7 +658,7 @@ const removeCartItemMutation = async (payload) => {
           newCart.pi = null;
         }
 
-        const expiresIn = getExpiresIn(newCart.wooSessionId);
+        const expiresIn = getExpiresIn(wooSessionId);
 
         const results = await redis
           .multi()
@@ -663,7 +674,7 @@ const removeCartItemMutation = async (payload) => {
         if (results) {
           await resetShippingCharges(clientMutationId, newCart);
 
-          stream.emit("channel", clientMutationId, {
+          stream.emit(clientMutationId, {
             type: "removeCart",
             message: "The item is removed from cart successfully!",
             cart: newCart,
@@ -673,7 +684,7 @@ const removeCartItemMutation = async (payload) => {
           });
         } else {
           console.log("Failed to remove cart item", results);
-          stream.emit("channel", clientMutationId, {
+          stream.emit(clientMutationId, {
             type: "Error",
             message: "Failed to remove cart item",
           });
@@ -693,17 +704,7 @@ const removeCartItemMutation = async (payload) => {
 //   response.json(payload);
 // }
 
-async function addToCartHandler(request, response, next) {
-  const payload = request.body;
-  console.log("addToCart.payload", payload);
-
-  stream.emit("addToCart", payload);
-
-  response.json({
-    error: null,
-    success: true,
-  });
-}
+async function addToCartHandler(request, response, next) {}
 
 async function removeCartHandler(request, response, next) {
   const payload = request.body;
@@ -730,6 +731,7 @@ async function removeCartHandler(request, response, next) {
 //   // const cartItems = await redis.get(payload.cartItemSessionId)
 // }
 
+let clients = [];
 function eventsHandler(request, response, next) {
   const headers = {
     "Content-Type": "text/event-stream",
@@ -742,29 +744,48 @@ function eventsHandler(request, response, next) {
   const encoder = new TextEncoder();
 
   function eventListener(event, data) {
-    //res.write(JSON.stringify({ counter: data })); // NOTE: this DOES NOT work
     console.log("event", event);
-    console.log("event.data", data);
+    // console.log("event.data", data);
 
     response.write(
-      encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+      encoder.encode(
+        `event: ${request.params.id}\ndata: ${JSON.stringify(event)}\n\n`,
+      ),
     );
   }
 
-  stream.on("channel", eventListener);
+  const clientId = request.params.id;
+  if (!clients.includes(clientId)) {
+    clients.push(clientId);
+    console.log("New client client id:", clientId);
+  }
 
-  // const clientId = Date.now();
+  // stream.off("channel", eventListener);
+  stream.on(request.params.id, eventListener);
 
   request.on("close", () => {
-    console.log(`Connection closed`);
-    stream.off("channel", eventListener);
-    // response.end();
+    console.log(`Connection closed`, clientId);
+    stream.off(clientId, eventListener);
+    response.end();
+    clients = clients.filter((client) => client !== clientId);
+    // stream.off("channel", eventListener);
   });
 }
 
-app.get("/api/sse", eventsHandler);
-// app.post("/api/sse", postHandler);
-app.post("/api/addToCart", addToCartHandler);
+app.get("/api/sse/:id", eventsHandler);
+
+app.post("/api/addToCart", function (req, res) {
+  const payload = req.body;
+  console.log("addToCart.handler.payload", payload);
+
+  stream.emit("addToCart", payload);
+
+  res.json({
+    error: null,
+    success: true,
+  });
+});
+
 app.post("/api/removeCart", removeCartHandler);
 // app.post("/api/clearCart", clearCartHandler);
 
@@ -772,6 +793,7 @@ app.get("/api/status", function (request, response, next) {
   console.log("ready");
   response.json({
     message: "ready",
+    clients,
   });
 });
 
