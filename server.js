@@ -11,7 +11,7 @@ import dotenv from "dotenv";
 // import session from "express-session";
 import pkg from "./package.json" assert { type: "json" };
 
-const PORT = 3003;
+const PORT = process.env.PORT;
 const REDIS_PORT = 6379;
 const envFileName = `.env.${process.env.NODE_ENV || "development"}`;
 console.log("envFileName", envFileName);
@@ -468,7 +468,7 @@ async function addToCartMutation(data) {
   }
 }
 
-stream.on("addToCart", async function (data) {
+stream.on("addToCart", async function(data) {
   await addToCartMutation(data);
 });
 
@@ -705,7 +705,7 @@ const removeCartItemMutation = async (payload) => {
 //   response.json(payload);
 // }
 
-async function addToCartHandler(request, response, next) {}
+async function addToCartHandler(request, response, next) { }
 
 async function removeCartHandler(request, response, next) {
   const payload = request.body;
@@ -775,7 +775,7 @@ function eventsHandler(request, response, next) {
 
 app.get("/api/sse/:id", eventsHandler);
 
-app.post("/api/addToCart", function (req, res) {
+app.post("/api/addToCart", function(req, res) {
   const payload = req.body;
   console.log("addToCart.handler.payload", payload);
 
@@ -790,7 +790,7 @@ app.post("/api/addToCart", function (req, res) {
 app.post("/api/removeCart", removeCartHandler);
 // app.post("/api/clearCart", clearCartHandler);
 
-app.get("/api/status", function (request, response, next) {
+app.get("/api/status", function(request, response, next) {
   console.log("ready");
   response.json({
     message: "ready",
