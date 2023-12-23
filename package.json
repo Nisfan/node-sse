@@ -18,7 +18,9 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "ioredis": "^5.3.2",
-    "isbot": "4"
+    "isbot": "4",
+    "lru-cache": "^10.1.0",
+    "node-cache": "^5.1.2"
   },
   "devDependencies": {
     "dotenv": "^16.3.1"
