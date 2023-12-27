@@ -2,8 +2,8 @@ import express from "express";
 import cors from "cors";
 import EventEmitter from "events";
 import { Redis } from "ioredis";
-import { isbot } from "isbot";
-// import NodeCache from "node-cache";
+// import { isbot } from "isbot";
+import NodeCache from "node-cache";
 
 // import { LRUCache } from "lru-cache";
 // import { Mutex } from "async-mutex";
@@ -24,7 +24,8 @@ console.log(`Running version v${pkg.version}`);
 
 // const lruOptions = {}
 // const clients = new LRUCache(options)
-// const nodeCache = new NodeCache();
+const nodeCache = new NodeCache();
+// let clients = [];
 
 const PORT = Number(process.env.PORT);
 const REDIS_PORT = 6379;
@@ -825,14 +826,23 @@ async function eventsHandler(request, response, next) {
   }
 
   const clientId = request.params.id;
-  // if (!nodeCache.has(clientId)) {
-  //   const payload = {
-  //     isBot: isbot(request.headers),
-  //   };
-  //
-  //   recordClientAction(clientId, "NewClient", payload);
-  //   console.log("New client client id:", clientId);
-  // }
+  if (!nodeCache.has(clientId)) {
+    nodeCache.set(clientId, {
+      at: new Date(),
+    });
+    // clients.push(clientId);
+
+    // stream.once(clientId, {
+    //   type: "init",
+    //   payload: null,
+    // });
+    // const payload = {
+    //   isBot: isbot(request.headers),
+    // };
+    //
+    // recordClientAction(clientId, "NewClient", payload);
+    console.log("New client client id:", clientId);
+  }
 
   // stream.off("channel", eventListener);
   stream.on(request.params.id, eventListener);
@@ -855,7 +865,7 @@ async function eventsHandler(request, response, next) {
     stream.off(clientId, eventListener);
     response.end();
 
-    // nodeCache.del(clientId);
+    nodeCache.del(clientId);
     // clients = clients.filter((c) => c.id !== clientId);
     // stream.off("channel", eventListener);
   });
