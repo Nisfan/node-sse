@@ -682,7 +682,7 @@ const removeCartItemMutation = async (payload) => {
           .exec();
 
         cartSessionData = JSON.parse(cartSessionData[1]);
-        cartItems = JSON.parse(cartItems[1]);
+        cartItems = JSON.parse(cartItems[1]) || [];
 
         const cartItemsFilter = cartItems.filter(
           (ci) => ci.cartId !== cartItemId,
