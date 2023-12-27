@@ -3,7 +3,7 @@ import cors from "cors";
 import EventEmitter from "events";
 import { Redis } from "ioredis";
 import { isbot } from "isbot";
-import NodeCache from "node-cache";
+// import NodeCache from "node-cache";
 
 // import { LRUCache } from "lru-cache";
 // import { Mutex } from "async-mutex";
@@ -24,7 +24,7 @@ console.log(`Running version v${pkg.version}`);
 
 // const lruOptions = {}
 // const clients = new LRUCache(options)
-const nodeCache = new NodeCache();
+// const nodeCache = new NodeCache();
 
 const PORT = Number(process.env.PORT);
 const REDIS_PORT = 6379;
@@ -500,29 +500,29 @@ async function addToCartMutation(data) {
 }
 
 function recordClientAction(id, type, data) {
-  const values = nodeCache.get(id);
-  if (!values) {
-    console.log("invalid client id", id);
-
-    nodeCache.set(id, [
-      {
-        typ: type,
-        data,
-        at: new Date(),
-      },
-    ]);
-  } else {
-    values.push({
-      typ: type,
-      data,
-      at: new Date(),
-    });
-
-    nodeCache.set(id, values);
-  }
+  // const values = nodeCache.get(id);
+  // if (!values) {
+  //   console.log("invalid client id", id);
+  //
+  //   nodeCache.set(id, [
+  //     {
+  //       typ: type,
+  //       data,
+  //       at: new Date(),
+  //     },
+  //   ]);
+  // } else {
+  //   values.push({
+  //     typ: type,
+  //     data,
+  //     at: new Date(),
+  //   });
+  //
+  //   nodeCache.set(id, values);
+  // }
 }
 
-stream.on("addToCart", async function(data) {
+stream.on("addToCart", async function (data) {
   await addToCartMutation(data);
 });
 
@@ -674,10 +674,15 @@ const removeCartItemMutation = async (payload) => {
       const appliedCoupons = getFormattedCoupons(response.appliedCoupons);
 
       try {
-        const [cartSessionData, cartItems] = await Promise.all([
-          getCart(cartSessionId),
-          getCartItems(cartItemsSessionId),
-        ]);
+        let [cartSessionData, cartItems] = await redis
+          .pipeline()
+          .get(cartSessionId)
+          .get(cartItemsSessionId)
+          .exec();
+
+        cartSessionData = JSON.parse(cartSessionData[1]);
+        cartItems = JSON.parse(cartItems[1]);
+
         const cartItemsFilter = cartItems.filter(
           (ci) => ci.cartId !== cartItemId,
         );
@@ -769,7 +774,7 @@ const removeCartItemMutation = async (payload) => {
 //   response.json(payload);
 // }
 
-async function addToCartHandler(request, response, next) { }
+async function addToCartHandler(request, response, next) {}
 
 async function removeCartHandler(request, response, next) {
   const payload = request.body;
@@ -797,7 +802,7 @@ async function removeCartHandler(request, response, next) {
 //   // const cartItems = await redis.get(payload.cartItemSessionId)
 // }
 
-function eventsHandler(request, response, next) {
+async function eventsHandler(request, response, next) {
   const headers = {
     "Content-Type": "text/event-stream",
     Connection: "keep-alive",
@@ -819,25 +824,38 @@ function eventsHandler(request, response, next) {
     );
   }
 
-  const clientId = request.params.id;
-  if (!nodeCache.has(clientId)) {
-    const payload = {
-      isBot: isbot(request.headers),
-    };
-
-    recordClientAction(clientId, "NewClient", payload);
-    console.log("New client client id:", clientId);
-  }
+  // const clientId = request.params.id;
+  // if (!nodeCache.has(clientId)) {
+  //   const payload = {
+  //     isBot: isbot(request.headers),
+  //   };
+  //
+  //   recordClientAction(clientId, "NewClient", payload);
+  //   console.log("New client client id:", clientId);
+  // }
 
   // stream.off("channel", eventListener);
   stream.on(request.params.id, eventListener);
+
+  redis
+    .pipeline()
+    .get(`cart:${clientId}`)
+    .get(`cartItems:${clientId}`)
+    .exec(function (error, results) {
+      console.log("results", results);
+      const [cart, cartItems] = results;
+      stream.emit(clientId, {
+        type: "init",
+        payload: { cart: cart[0], cartItems: cartItems[1] || [] },
+      });
+    });
 
   request.on("close", () => {
     console.log(`Connection closed`, clientId);
     stream.off(clientId, eventListener);
     response.end();
 
-    nodeCache.del(clientId);
+    // nodeCache.del(clientId);
     // clients = clients.filter((c) => c.id !== clientId);
     // stream.off("channel", eventListener);
   });
@@ -845,7 +863,7 @@ function eventsHandler(request, response, next) {
 
 app.get("/api/sse/:id", eventsHandler);
 
-app.post("/api/addToCart", function(req, res) {
+app.post("/api/addToCart", function (req, res) {
   const payload = req.body;
   console.log("addToCart.handler.payload", payload);
 
@@ -862,17 +880,15 @@ app.post("/api/addToCart", function(req, res) {
 app.post("/api/removeCart", removeCartHandler);
 // app.post("/api/clearCart", clearCartHandler);
 
-app.get("/api/status", function(request, response, next) {
-  console.log("ready1");
-
-  const allClient = nodeCache.keys().map((k) => {
-    const value = nodeCache.get(k);
-    return { id: k, actions: value };
-  });
+app.get("/api/status", function (request, response, next) {
+  // const allClient = nodeCache.keys().map((k) => {
+  //   const value = nodeCache.get(k);
+  //   return { id: k, actions: value };
+  // });
 
   response.json({
     message: "ready",
-    clients: allClient,
+    // clients: [],
   });
 });
 
