@@ -824,7 +824,7 @@ async function eventsHandler(request, response, next) {
     );
   }
 
-  // const clientId = request.params.id;
+  const clientId = request.params.id;
   // if (!nodeCache.has(clientId)) {
   //   const payload = {
   //     isBot: isbot(request.headers),
@@ -837,18 +837,18 @@ async function eventsHandler(request, response, next) {
   // stream.off("channel", eventListener);
   stream.on(request.params.id, eventListener);
 
-  redis
-    .pipeline()
-    .get(`cart:${clientId}`)
-    .get(`cartItems:${clientId}`)
-    .exec(function (error, results) {
-      console.log("results", results);
-      const [cart, cartItems] = results;
-      stream.emit(clientId, {
-        type: "init",
-        payload: { cart: cart[0], cartItems: cartItems[1] || [] },
-      });
-    });
+  // redis
+  //   .pipeline()
+  //   .get(`cart:${clientId}`)
+  //   .get(`cartItems:${clientId}`)
+  //   .exec(function (error, results) {
+  //     console.log("results", results);
+  //     const [cart, cartItems] = results;
+  //     stream.emit(clientId, {
+  //       type: "init",
+  //       payload: { cart: cart[0], cartItems: cartItems[1] || [] },
+  //     });
+  //   });
 
   request.on("close", () => {
     console.log(`Connection closed`, clientId);
