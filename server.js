@@ -144,6 +144,9 @@ function getParsedJwt(token) {
 }
 
 function getExpiresIn(wooSessionId) {
+  if (!wooSessionId) {
+    return null;
+  }
   console.warn("getExpiresIn.wooSessionId", wooSessionId);
   const jwtPayload = getParsedJwt(wooSessionId);
   if (!jwtPayload) {
@@ -673,7 +676,7 @@ async function removeCartItemWpgraphql(payload) {
   }
 }
 
-async function updateSession(clientMutationId, cart, cartItems) {
+async function updateSession(clientMutationId, wooSessionId, cart, cartItems) {
   const cartItemsSessionId = `cartItems:${clientMutationId}`;
   const cartSessionId = `cart:${clientMutationId}`;
 
@@ -703,13 +706,21 @@ async function updateSession(clientMutationId, cart, cartItems) {
     newCart.pi = null;
   }
 
-  const expiresIn = getExpiresIn(cart.wooSessionId);
-
-  const results = await redis
-    .multi()
-    .set(cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
-    .set(cartItemsSessionId, JSON.stringify(cartItems), "EX", expiresIn)
-    .exec();
+  const expiresIn = getExpiresIn(wooSessionId);
+  let results = null;
+  if (expiresIn) {
+    results = await redis
+      .multi()
+      .set(cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
+      .set(cartItemsSessionId, JSON.stringify(cartItems), "EX", expiresIn)
+      .exec();
+  } else {
+    results = await redis
+      .multi()
+      .set(cartSessionId, JSON.stringify(newCart))
+      .set(cartItemsSessionId, JSON.stringify(cartItems))
+      .exec();
+  }
 
   return results;
 }
@@ -763,6 +774,7 @@ async function removeCartItemSession(
       } else {
         console.log("clearCart");
 
+        await clearCartSession(clientMutationId);
         // await clearCart(clientMutationId, wooSessionId);
       }
     } else {
@@ -779,6 +791,7 @@ async function removeCartItemSession(
 
       const results = await updateSession(
         clientMutationId,
+        wooSessionId,
         newCart,
         cartItemsFilter,
       );
