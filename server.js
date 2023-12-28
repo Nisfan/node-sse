@@ -640,36 +640,78 @@ async function removeCartItemWpgraphql(payload) {
       error.message.indexOf("No items in cart to remove") > -1
     ) {
       return {
-        error: error,
+        error,
         response: null,
-        removeSession: true,
-        clearAll: true,
+        removeSession: false,
+        clearSession: true,
       };
     } else if (
       error.message &&
       error.message.indexOf("No cart item found with the key") > -1
     ) {
       return {
-        error: error,
+        error,
         response: null,
         removeSession: true,
-        clearAll: false,
+        clearSession: false,
       };
     } else if (error.message && error.message.indexOf("Cart is empty") > -1) {
       return {
-        error: error,
+        error,
         response: null,
-        removeSession: true,
+        removeSession: false,
         clearAll: true,
       };
     }
+
     return {
-      error: error,
+      error,
       response: null,
       removeSession: false,
       clearAll: false,
     };
   }
+}
+
+async function updateSession(clientMutationId, cart, cartItems) {
+  const cartItemsSessionId = `cartItems:${clientMutationId}`;
+  const cartSessionId = `cart:${clientMutationId}`;
+
+  const taxValue = calculateTaxValue(cart.totalDiscount, cartItems);
+
+  const hasProducts =
+    cartItems.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
+
+  const hasFreeClass =
+    cartItems.filter((ci) => ci.type === "EVENTTICKET" && ci.price === 0)
+      .length > 0;
+
+  const hasPricedClass =
+    cartItems.filter((ci) => ci.type === "EVENTTICKET" && ci.price > 0).length >
+    0;
+
+  const newCart = {
+    ...cart,
+    taxValue,
+    hasProducts: hasProducts,
+    hasPricedClass: hasPricedClass,
+    hasFreeClass: hasFreeClass,
+  };
+
+  if (cartItems.length === 0) {
+    // newCart.wooSessionId = null;
+    newCart.pi = null;
+  }
+
+  const expiresIn = getExpiresIn(cart.wooSessionId);
+
+  const results = await redis
+    .multi()
+    .set(cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
+    .set(cartItemsSessionId, JSON.stringify(cartItems), "EX", expiresIn)
+    .exec();
+
+  return results;
 }
 
 async function removeCartItemSession(
@@ -691,83 +733,55 @@ async function removeCartItemSession(
     cartSessionData = JSON.parse(cartSessionData[1]);
     cartItems = JSON.parse(cartItems[1]) || [];
 
+    console.log("cartItems", cartItems);
     const cartItemsFilter = cartItems.filter((ci) => ci.cartId !== cartItemId);
 
-    console.log("cartResponse.removeCartItemSession", cartResponse);
-    if (cartItemsFilter.length === 0 || !cartResponse) {
-      if (!cartResponse) {
+    // console.log("cartResponse.removeCartItemSession", cartResponse);
+    if (cartResponse.error) {
+      if (cartResponse.clearSession || cartItemsFilter.length === 0) {
+        console.log("clearCartSession");
         await clearCartSession(clientMutationId);
 
-        const newCart = {
-          pi: null,
-          coupons: [],
-          subtotal: 0,
-          taxValue: 0,
-          totalDiscount: 0,
-          hasProducts: false,
-          hasPricedClass: false,
-          hasFreeClass: false,
-        };
-        stream.emit(clientMutationId, {
-          type: "removeCart",
-          message: "The item is removed from cart successfully!",
-          cart: newCart,
-          cartItem: {
-            cartId: null,
-          },
-        });
+        // const newCart = {
+        //   pi: null,
+        //   coupons: [],
+        //   subtotal: 0,
+        //   taxValue: 0,
+        //   totalDiscount: 0,
+        //   hasProducts: false,
+        //   hasPricedClass: false,
+        //   hasFreeClass: false,
+        // };
+        // stream.emit(clientMutationId, {
+        //   type: "removeCart",
+        //   message: "The item is removed from cart successfully!",
+        //   cart: newCart,
+        //   cartItem: {
+        //     cartId: null,
+        //   },
+        // });
       } else {
-        await clearCart(clientMutationId, wooSessionId);
+        console.log("clearCart");
+
+        // await clearCart(clientMutationId, wooSessionId);
       }
     } else {
-      const taxValue = calculateTaxValue(
-        response.totalDiscount,
-        cartItemsFilter,
+      const appliedCoupons = getFormattedCoupons(
+        cartResponse.response.appliedCoupons,
       );
-      // const cartSessionData = await getCart(cartSessionId);
 
-      const hasProducts =
-        cartItemsFilter.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
-
-      const hasFreeClass =
-        cartItemsFilter.filter(
-          (ci) => ci.type === "EVENTTICKET" && ci.price === 0,
-        ).length > 0;
-
-      const hasPricedClass =
-        cartItemsFilter.filter(
-          (ci) => ci.type === "EVENTTICKET" && ci.price > 0,
-        ).length > 0;
-
-      const appliedCoupons = getFormattedCoupons(cartResponse.appliedCoupons);
       const newCart = {
         ...cartSessionData,
         coupons: appliedCoupons,
-        subtotal: cartResponse.subtotal,
-        taxValue,
-        totalDiscount: cartResponse.totalDiscount,
-        hasProducts: hasProducts,
-        hasPricedClass: hasPricedClass,
-        hasFreeClass: hasFreeClass,
+        subtotal: cartResponse.response.subtotal,
+        totalDiscount: cartResponse.response.totalDiscount,
       };
 
-      if (cartItemsFilter.length === 0) {
-        // newCart.wooSessionId = null;
-        newCart.pi = null;
-      }
-
-      const expiresIn = getExpiresIn(wooSessionId);
-
-      const results = await redis
-        .multi()
-        .set(cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
-        .set(
-          cartItemsSessionId,
-          JSON.stringify(cartItemsFilter),
-          "EX",
-          expiresIn,
-        )
-        .exec();
+      const results = await updateSession(
+        clientMutationId,
+        newCart,
+        cartItemsFilter,
+      );
 
       if (results) {
         await resetShippingCharges(clientMutationId, newCart);
@@ -799,15 +813,11 @@ async function clearCartSession(clientMutationId) {
   const cartItemsSessionId = `cartItems:${clientMutationId}`;
   const cartSessionId = `cart:${clientMutationId}`;
 
-  return redis.multi().del(cartSessionId).del(cartItemsSessionId).exec();
-}
-
-async function clearCart(clientMutationId, wooSessionId) {
-  const cart = new Cart();
-  cart.clearCart(null, wooSessionId);
-
-  const results = await clearCartSession(clientMutationId);
-  await resetShippingCharges(clientMutationId, null);
+  const results = await redis
+    .multi()
+    .del(cartSessionId)
+    .del(cartItemsSessionId)
+    .exec();
 
   if (results) {
     const newCart = {
@@ -828,10 +838,39 @@ async function clearCart(clientMutationId, wooSessionId) {
         cartId: null,
       },
     });
-
-    return true;
   }
 }
+
+// async function clearCart(clientMutationId, wooSessionId) {
+//   const cart = new Cart();
+//   cart.clearCart(null, wooSessionId);
+//
+//   const results = await clearCartSession(clientMutationId);
+//   await resetShippingCharges(clientMutationId, null);
+//
+//   if (results) {
+//     const newCart = {
+//       pi: null,
+//       coupons: [],
+//       subtotal: 0,
+//       taxValue: 0,
+//       totalDiscount: 0,
+//       hasProducts: false,
+//       hasPricedClass: false,
+//       hasFreeClass: false,
+//     };
+//     stream.emit(clientMutationId, {
+//       type: "removeCart",
+//       message: "The item is removed from cart successfully!",
+//       cart: newCart,
+//       cartItem: {
+//         cartId: null,
+//       },
+//     });
+//
+//     return true;
+//   }
+// }
 
 const removeCartItemMutation = async (payload) => {
   console.log("evenEmitter.removeCart.payload", payload);
@@ -842,37 +881,30 @@ const removeCartItemMutation = async (payload) => {
   console.log("result", result);
 
   if (result.error) {
-    if (result.clearAll) {
-      await clearCart(clientMutationId, wooSessionId);
-    } else {
-      const results = await removeCartItemSession(
-        clientMutationId,
-        wooSessionId,
-        cartItemId,
-        result.response,
-      );
-    }
+    const results = await removeCartItemSession(
+      clientMutationId,
+      wooSessionId,
+      cartItemId,
+      result,
+    );
+    // if (result.clearSession) {
+    //   await clearCartSession(clientMutationId);
+    // } else {
+    // }
   } else if (result.response) {
     if (result.response.clearCart) {
-      await clearCart(clientMutationId, wooSessionId);
+      await clearCartSession(clientMutationId);
+      // await clearCart(clientMutationId, wooSessionId);
     } else {
       const results = await removeCartItemSession(
         clientMutationId,
         wooSessionId,
         cartItemId,
-        result.response,
+        result,
       );
     }
   }
 };
-
-// function postHandler(request, response, next) {
-//   console.log("Cookies: ", request.cookies);
-//   const payload = request.body;
-//   console.log("payload", payload);
-//   stream.emit("channel", payload.sessionId, payload);
-//   response.json(payload);
-// }
 
 async function removeCartHandler(request, response, next) {
   const payload = request.body;
