@@ -695,30 +695,30 @@ async function removeCartItemSession(
 
     console.log("cartResponse.removeCartItemSession", cartResponse);
     if (cartItemsFilter.length === 0 || !cartResponse) {
-      // if (!cartResponse) {
-      //   await clearCartSession(clientMutationId);
-      //
-      //   const newCart = {
-      //     pi: null,
-      //     coupons: [],
-      //     subtotal: 0,
-      //     taxValue: 0,
-      //     totalDiscount: 0,
-      //     hasProducts: false,
-      //     hasPricedClass: false,
-      //     hasFreeClass: false,
-      //   };
-      //   stream.emit(clientMutationId, {
-      //     type: "removeCart",
-      //     message: "The item is removed from cart successfully!",
-      //     cart: newCart,
-      //     cartItem: {
-      //       cartId: null,
-      //     },
-      //   });
-      // } else {
-      //   await clearCart(clientMutationId, wooSessionId);
-      // }
+      if (!cartResponse) {
+        await clearCartSession(clientMutationId);
+
+        const newCart = {
+          pi: null,
+          coupons: [],
+          subtotal: 0,
+          taxValue: 0,
+          totalDiscount: 0,
+          hasProducts: false,
+          hasPricedClass: false,
+          hasFreeClass: false,
+        };
+        stream.emit(clientMutationId, {
+          type: "removeCart",
+          message: "The item is removed from cart successfully!",
+          cart: newCart,
+          cartItem: {
+            cartId: null,
+          },
+        });
+      } else {
+        await clearCart(clientMutationId, wooSessionId);
+      }
     } else {
       const taxValue = calculateTaxValue(
         response.totalDiscount,
@@ -878,7 +878,7 @@ async function removeCartHandler(request, response, next) {
   const payload = request.body;
   console.log("removeCart.payload", payload);
 
-  recordClientAction(payload.clientMutationId, "BeginRemoveCart", payload);
+  // recordClientAction(payload.clientMutationId, "BeginRemoveCart", payload);
   stream.emit("removeCart", payload);
 
   response.json({
