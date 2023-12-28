@@ -617,51 +617,160 @@ function getFormattedCoupons(appliedCoupons = []) {
 //   }
 // });
 
-const removeCartItemMutation = async (payload) => {
-  console.log("evenEmitter.removeCart.payload", payload);
+async function removeCartItemWpgraphql(payload) {
   const cart = new Cart();
-
   const { clientMutationId, wooSessionId, paymentIntentId, cartItemId } =
     payload;
 
-  const response = await cart.removeCartItem(
-    clientMutationId,
-    wooSessionId,
-    paymentIntentId,
-    cartItemId,
-  );
+  try {
+    const response = await cart.removeCartItem(
+      clientMutationId,
+      wooSessionId,
+      paymentIntentId,
+      cartItemId,
+    );
 
-  const cartItemsSessionId = `cartItems:${clientMutationId}`;
-  const cartSessionId = `cart:${clientMutationId}`;
+    return {
+      error: null,
+      response,
+    };
+  } catch (error) {
+    if (
+      error.message &&
+      error.message.indexOf("No items in cart to remove") > -1
+    ) {
+      return {
+        error: error,
+        response: null,
+        removeSession: true,
+        clearAll: true,
+      };
+    } else if (
+      error.message &&
+      error.message.indexOf("No cart item found with the key") > -1
+    ) {
+      return {
+        error: error,
+        response: null,
+        removeSession: true,
+        clearAll: false,
+      };
+    } else if (error.message && error.message.indexOf("Cart is empty") > -1) {
+      return {
+        error: error,
+        response: null,
+        removeSession: true,
+        clearAll: true,
+      };
+    }
+    return {
+      error: error,
+      response: null,
+      removeSession: false,
+      clearAll: false,
+    };
+  }
+}
 
-  recordClientAction(clientMutationId, "RemoveCart.Response", response);
-  if (response) {
-    if (response.clearCart) {
-      console.log("clearing cart, response:", response);
-      cart.clearCart(null, wooSessionId);
+async function removeCartItemSession(
+  clientMutationId,
+  wooSessionId,
+  cartItemId,
+  cartResponse,
+) {
+  try {
+    const cartItemsSessionId = `cartItems:${clientMutationId}`;
+    const cartSessionId = `cart:${clientMutationId}`;
+
+    let [cartSessionData, cartItems] = await redis
+      .pipeline()
+      .get(cartSessionId)
+      .get(cartItemsSessionId)
+      .exec();
+
+    cartSessionData = JSON.parse(cartSessionData[1]);
+    cartItems = JSON.parse(cartItems[1]) || [];
+
+    const cartItemsFilter = cartItems.filter((ci) => ci.cartId !== cartItemId);
+
+    console.log("cartResponse.removeCartItemSession", cartResponse);
+    if (cartItemsFilter.length === 0 || !cartResponse) {
+      // if (!cartResponse) {
+      //   await clearCartSession(clientMutationId);
+      //
+      //   const newCart = {
+      //     pi: null,
+      //     coupons: [],
+      //     subtotal: 0,
+      //     taxValue: 0,
+      //     totalDiscount: 0,
+      //     hasProducts: false,
+      //     hasPricedClass: false,
+      //     hasFreeClass: false,
+      //   };
+      //   stream.emit(clientMutationId, {
+      //     type: "removeCart",
+      //     message: "The item is removed from cart successfully!",
+      //     cart: newCart,
+      //     cartItem: {
+      //       cartId: null,
+      //     },
+      //   });
+      // } else {
+      //   await clearCart(clientMutationId, wooSessionId);
+      // }
+    } else {
+      const taxValue = calculateTaxValue(
+        response.totalDiscount,
+        cartItemsFilter,
+      );
+      // const cartSessionData = await getCart(cartSessionId);
+
+      const hasProducts =
+        cartItemsFilter.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
+
+      const hasFreeClass =
+        cartItemsFilter.filter(
+          (ci) => ci.type === "EVENTTICKET" && ci.price === 0,
+        ).length > 0;
+
+      const hasPricedClass =
+        cartItemsFilter.filter(
+          (ci) => ci.type === "EVENTTICKET" && ci.price > 0,
+        ).length > 0;
+
+      const appliedCoupons = getFormattedCoupons(cartResponse.appliedCoupons);
+      const newCart = {
+        ...cartSessionData,
+        coupons: appliedCoupons,
+        subtotal: cartResponse.subtotal,
+        taxValue,
+        totalDiscount: cartResponse.totalDiscount,
+        hasProducts: hasProducts,
+        hasPricedClass: hasPricedClass,
+        hasFreeClass: hasFreeClass,
+      };
+
+      if (cartItemsFilter.length === 0) {
+        // newCart.wooSessionId = null;
+        newCart.pi = null;
+      }
+
+      const expiresIn = getExpiresIn(wooSessionId);
 
       const results = await redis
         .multi()
-        .del(cartSessionId)
-        .del(cartItemsSessionId)
+        .set(cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
+        .set(
+          cartItemsSessionId,
+          JSON.stringify(cartItemsFilter),
+          "EX",
+          expiresIn,
+        )
         .exec();
 
-      await resetShippingCharges(clientMutationId, null);
-
       if (results) {
-        recordClientAction(clientMutationId, "EndRemoveCart", {
-          success: true,
-        });
-        const newCart = {
-          pi: null,
-          coupons: [],
-          subtotal: 0,
-          taxValue: 0,
-          totalDiscount: 0,
-          hasProducts: false,
-          hasPricedClass: false,
-          hasFreeClass: false,
-        };
+        await resetShippingCharges(clientMutationId, newCart);
         stream.emit(clientMutationId, {
           type: "removeCart",
           message: "The item is removed from cart successfully!",
@@ -670,99 +779,89 @@ const removeCartItemMutation = async (payload) => {
             cartId: cartItemId,
           },
         });
+      } else {
+        console.log("Failed to remove cart item", results);
+        stream.emit(clientMutationId, {
+          type: "Error",
+          message: "Failed to remove cart item",
+        });
       }
+
+      return results;
+    }
+  } catch (error) {
+    console.log("Error while removing cart item session", error);
+    return false;
+  }
+}
+
+async function clearCartSession(clientMutationId) {
+  const cartItemsSessionId = `cartItems:${clientMutationId}`;
+  const cartSessionId = `cart:${clientMutationId}`;
+
+  return redis.multi().del(cartSessionId).del(cartItemsSessionId).exec();
+}
+
+async function clearCart(clientMutationId, wooSessionId) {
+  const cart = new Cart();
+  cart.clearCart(null, wooSessionId);
+
+  const results = await clearCartSession(clientMutationId);
+  await resetShippingCharges(clientMutationId, null);
+
+  if (results) {
+    const newCart = {
+      pi: null,
+      coupons: [],
+      subtotal: 0,
+      taxValue: 0,
+      totalDiscount: 0,
+      hasProducts: false,
+      hasPricedClass: false,
+      hasFreeClass: false,
+    };
+    stream.emit(clientMutationId, {
+      type: "removeCart",
+      message: "The item is removed from cart successfully!",
+      cart: newCart,
+      cartItem: {
+        cartId: null,
+      },
+    });
+
+    return true;
+  }
+}
+
+const removeCartItemMutation = async (payload) => {
+  console.log("evenEmitter.removeCart.payload", payload);
+
+  const { clientMutationId, wooSessionId, cartItemId } = payload;
+
+  const result = await removeCartItemWpgraphql(payload);
+  console.log("result", result);
+
+  if (result.error) {
+    if (result.clearAll) {
+      await clearCart(clientMutationId, wooSessionId);
     } else {
-      const appliedCoupons = getFormattedCoupons(response.appliedCoupons);
-
-      try {
-        let [cartSessionData, cartItems] = await redis
-          .pipeline()
-          .get(cartSessionId)
-          .get(cartItemsSessionId)
-          .exec();
-
-        cartSessionData = JSON.parse(cartSessionData[1]);
-        cartItems = JSON.parse(cartItems[1]) || [];
-
-        const cartItemsFilter = cartItems.filter(
-          (ci) => ci.cartId !== cartItemId,
-        );
-
-        const taxValue = calculateTaxValue(
-          response.totalDiscount,
-          cartItemsFilter,
-        );
-        // const cartSessionData = await getCart(cartSessionId);
-
-        const hasProducts =
-          cartItemsFilter.filter((ci) => ci.type !== "EVENTTICKET").length > 0;
-
-        const hasFreeClass =
-          cartItemsFilter.filter(
-            (ci) => ci.type === "EVENTTICKET" && ci.price === 0,
-          ).length > 0;
-
-        const hasPricedClass =
-          cartItemsFilter.filter(
-            (ci) => ci.type === "EVENTTICKET" && ci.price > 0,
-          ).length > 0;
-
-        const newCart = {
-          ...cartSessionData,
-          coupons: appliedCoupons,
-          subtotal: response.subtotal,
-          taxValue,
-          totalDiscount: response.totalDiscount,
-          hasProducts: hasProducts,
-          hasPricedClass: hasPricedClass,
-          hasFreeClass: hasFreeClass,
-        };
-
-        if (cartItemsFilter.length === 0) {
-          // newCart.wooSessionId = null;
-          newCart.pi = null;
-        }
-
-        const expiresIn = getExpiresIn(wooSessionId);
-
-        const results = await redis
-          .multi()
-          .set(cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
-          .set(
-            cartItemsSessionId,
-            JSON.stringify(cartItemsFilter),
-            "EX",
-            expiresIn,
-          )
-          .exec();
-
-        if (results) {
-          recordClientAction(clientMutationId, "EndRemoveCart", {
-            success: true,
-          });
-          await resetShippingCharges(clientMutationId, newCart);
-
-          stream.emit(clientMutationId, {
-            type: "removeCart",
-            message: "The item is removed from cart successfully!",
-            cart: newCart,
-            cartItem: {
-              cartId: cartItemId,
-            },
-          });
-        } else {
-          recordClientAction(clientMutationId, "EndRemoveCart", {
-            results,
-          });
-          console.log("Failed to remove cart item", results);
-          stream.emit(clientMutationId, {
-            type: "Error",
-            message: "Failed to remove cart item",
-          });
-        }
-      } catch (err) {
-        console.log("RemoveCart.Error:", err);
-      }
+      const results = await removeCartItemSession(
+        clientMutationId,
+        wooSessionId,
+        cartItemId,
+        result.response,
+      );
+    }
+  } else if (result.response) {
+    if (result.response.clearCart) {
+      await clearCart(clientMutationId, wooSessionId);
+    } else {
+      const results = await removeCartItemSession(
+        clientMutationId,
+        wooSessionId,
+        cartItemId,
+        result.response,
+      );
     }
   }
 };
@@ -774,8 +873,6 @@ const removeCartItemMutation = async (payload) => {
 //   stream.emit("channel", payload.sessionId, payload);
 //   response.json(payload);
 // }
-
-async function addToCartHandler(request, response, next) {}
 
 async function removeCartHandler(request, response, next) {
   const payload = request.body;
@@ -877,7 +974,7 @@ app.post("/api/addToCart", function (req, res) {
   const payload = req.body;
   console.log("addToCart.handler.payload", payload);
 
-  recordClientAction(payload.clientMutationId, "BeginAddToCart", payload);
+  // recordClientAction(payload.clientMutationId, "BeginAddToCart", payload);
 
   stream.emit("addToCart", payload);
 
