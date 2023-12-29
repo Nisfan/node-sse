@@ -826,15 +826,14 @@ async function clearCartSession(clientMutationId) {
   const cartSessionId = `cart:${clientMutationId}`;
   const cartItemsSessionId = `cartItems:${clientMutationId}`;
 
-  const results = await redis
+  const [cart, cartItems] = await redis
     .multi()
     .del(cartSessionId)
     .del(cartItemsSessionId)
     .exec();
 
   console.log("clearCartSession", results);
-
-  if (results) {
+  if (cart[0] === null && cartItems[0] === null) {
     const newCart = {
       pi: null,
       coupons: [],
