@@ -835,6 +835,7 @@ async function clearCartSession(clientMutationId) {
   console.log("clearCartSession", cart);
   console.log("clearCartSession", cartItems);
   if (!cart[0] && !cartItems[0]) {
+    console.log("sending notification");
     const newCart = {
       pi: null,
       coupons: [],
