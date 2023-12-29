@@ -832,7 +832,8 @@ async function clearCartSession(clientMutationId) {
     .del(cartItemsSessionId)
     .exec();
 
-  console.log("clearCartSession", results);
+  console.log("clearCartSession", cart);
+  console.log("clearCartSession", cartItems);
   if (cart[0] === null && cartItems[0] === null) {
     const newCart = {
       pi: null,
