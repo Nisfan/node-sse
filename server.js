@@ -823,14 +823,16 @@ async function removeCartItemSession(
 }
 
 async function clearCartSession(clientMutationId) {
-  const cartItemsSessionId = `cartItems:${clientMutationId}`;
   const cartSessionId = `cart:${clientMutationId}`;
+  const cartItemsSessionId = `cartItems:${clientMutationId}`;
 
   const results = await redis
     .multi()
     .del(cartSessionId)
     .del(cartItemsSessionId)
     .exec();
+
+  console.log("clearCartSession", results);
 
   if (results) {
     const newCart = {
