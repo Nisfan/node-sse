@@ -36,7 +36,11 @@ const redisHost =
   process.env.NODE_ENV === "production" ? "127.0.0.1" : "5.161.99.138";
 
 const stream = new EventEmitter();
-const redis = new Redis(REDIS_PORT, redisHost); // 192.168.1.1:6379
+const redis = new Redis({
+  port: REDIS_PORT,
+  host: redisHost,
+  connectTimeout: 10000,
+}); // 192.168.1.1:6379
 // const sub = new Redis(redisPort, redisHost); // 192.168.1.1:6379
 // const mutex = new Mutex(); // creates a shared mutex instance
 
@@ -263,7 +267,7 @@ async function addToCartMutation(data) {
         cartId: cartItem.cartId,
         quantity: cartItem.quantity,
         price: cartItem.price,
-        name: cartItemToAdd.name,
+        name: cartItem?.name ? cartItem.name : cartItemToAdd.name,
         slug: cartItemToAdd.slug,
         taxClass: cartItem.taxClass,
         // stockQuantity: cartItem.stockQuantity,
