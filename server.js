@@ -267,7 +267,7 @@ async function addToCartMutation(data) {
         cartId: cartItem.cartId,
         quantity: cartItem.quantity,
         price: cartItem.price,
-        name: cartItemToAdd.name,
+        name: cartItem?.name ? cartItem.name : cartItemToAdd.name,
         slug: cartItemToAdd.slug,
         taxClass: cartItem.taxClass,
         // stockQuantity: cartItem.stockQuantity,
