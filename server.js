@@ -52,6 +52,7 @@ const redis = new Redis({
 //   // prefix: "myapp:",
 // });
 
+app.options("*", cors()); // include before other routes
 app.use(cors());
 app.use(express.json());
 // app.use(
