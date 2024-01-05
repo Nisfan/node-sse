@@ -52,8 +52,17 @@ const redis = new Redis({
 //   // prefix: "myapp:",
 // });
 
-app.options("*", cors()); // include before other routes
-app.use(cors());
+app.options(
+  "*",
+  cors({
+    credentials: true,
+  }),
+); // include before other routes
+app.use(
+  cors({
+    credentials: true,
+  }),
+);
 app.use(express.json());
 // app.use(
 //   session({
