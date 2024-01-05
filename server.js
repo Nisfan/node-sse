@@ -322,6 +322,7 @@ async function addToCartMutation(data) {
       };
 
       const expiresIn = getExpiresIn(newCart.wooSessionId);
+      console.log("addToCartMutation.expiresIn", expiresIn);
 
       const results = await redis
         .multi()
