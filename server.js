@@ -35,6 +35,11 @@ const app = express();
 const redisHost =
   process.env.NODE_ENV === "production" ? "127.0.0.1" : "5.161.99.138";
 
+const allowOrigin =
+  process.env.NODE_ENV === "production"
+    ? "https://www.rockymountainsewing.com"
+    : "http://localhost:3000";
+
 const stream = new EventEmitter();
 const redis = new Redis({
   port: REDIS_PORT,
@@ -966,11 +971,14 @@ async function removeCartHandler(request, response, next) {
 // }
 
 async function eventsHandler(request, response, next) {
+  const origin = request.headers.origin;
+  console.log("origin", origin);
+
   const headers = {
     "Content-Type": "text/event-stream",
     Connection: "keep-alive",
     "Cache-Control": "no-cache,no-transform",
-    "Access-Control-Allow-Origin": "https://www.rockymountainsewing.com",
+    "Access-Control-Allow-Origin": allowOrigin,
   };
 
   response.writeHead(200, headers);
