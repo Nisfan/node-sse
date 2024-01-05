@@ -40,6 +40,8 @@ const redis = new Redis({
   port: REDIS_PORT,
   host: redisHost,
   connectTimeout: 10000,
+  username: "default", // needs Redis >= 6
+  password: "fNxDZQYnYqMiBxC",
 }); // 192.168.1.1:6379
 // const sub = new Redis(redisPort, redisHost); // 192.168.1.1:6379
 // const mutex = new Mutex(); // creates a shared mutex instance
@@ -322,6 +324,7 @@ async function addToCartMutation(data) {
       };
 
       const expiresIn = getExpiresIn(newCart.wooSessionId);
+      console.log("addToCartMutation.expiresIn", expiresIn);
 
       const results = await redis
         .multi()
