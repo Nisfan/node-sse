@@ -38,7 +38,7 @@ const redisHost =
 const allowOrigin =
   process.env.NODE_ENV === "production"
     ? "https://www.rockymountainsewing.com"
-    : "http://localhost:3000";
+    : "https://simplur-next-app-git-feat-refactor-sse-simplur.vercel.app";
 
 const stream = new EventEmitter();
 const redis = new Redis({
