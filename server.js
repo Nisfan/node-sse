@@ -973,6 +973,7 @@ async function removeCartHandler(request, response, next) {
 async function eventsHandler(request, response, next) {
   const origin = request.headers.origin;
   console.log("origin", origin);
+  console.log("host", request.headers.host);
 
   const headers = {
     "Content-Type": "text/event-stream",
@@ -994,6 +995,8 @@ async function eventsHandler(request, response, next) {
         `event: ${request.params.id}\ndata: ${JSON.stringify(event)}\n\n`,
       ),
     );
+
+    response.flush();
   }
 
   const clientId = request.params.id;
