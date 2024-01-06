@@ -1004,11 +1004,8 @@ async function eventsHandler(request, response, next) {
     console.log("event", event);
     // console.log("event.data", data);
 
-    response.write(
-      encoder.encode(
-        `event: ${request.params.id}\ndata: ${JSON.stringify(event)}\n\n`,
-      ),
-    );
+    response.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    //client.write(`data: ${JSON.stringify(eventData)}\n\n`);
 
     // response.flush();
   }
