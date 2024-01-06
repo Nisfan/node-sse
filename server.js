@@ -992,6 +992,8 @@ async function eventsHandler(request, response, next) {
     Connection: "keep-alive",
     "Cache-Control": "no-cache,no-transform",
     "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+    "Access-Control-Allow-Headers": "*",
   };
 
   response.writeHead(200, headers);
