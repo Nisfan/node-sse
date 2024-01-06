@@ -65,6 +65,7 @@ app.options(
 ); // include before other routes
 app.use(
   cors({
+    origin: allowOrigin,
     credentials: true,
   }),
 );
