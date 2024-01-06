@@ -6,8 +6,8 @@ settings:
 
 dependencies:
   '@simplur/netlify-functions-helper':
-    specifier: 0.0.54-next-js.0
-    version: 0.0.54-next-js.0(@woocommerce/woocommerce-rest-api@1.0.1)(axios@1.5.1)(stripe@8.222.0)
+    specifier: 0.0.62-next-js.0
+    version: 0.0.62-next-js.0(@woocommerce/woocommerce-rest-api@1.0.1)(axios@1.5.1)(stripe@14.11.0)
   async-mutex:
     specifier: ^0.4.0
     version: 0.4.0
@@ -90,18 +90,18 @@ packages:
       '@sentry/types': 7.75.1
     dev: false
 
-  /@simplur/netlify-functions-helper@0.0.54-next-js.0(@woocommerce/woocommerce-rest-api@1.0.1)(axios@1.5.1)(stripe@8.222.0):
-    resolution: {integrity: sha512-bLeCyqclklhpTuh/it35Ir+GwELgGn35i2EJYhqsVe/6S6B59u6/zN8dmYJZnOTYGXYh4HpnKGnACl8wORCJhA==}
+  /@simplur/netlify-functions-helper@0.0.62-next-js.0(@woocommerce/woocommerce-rest-api@1.0.1)(axios@1.5.1)(stripe@14.11.0):
+    resolution: {integrity: sha512-MqAWEzY4ODpideyHMWPd08imBWS4jU0CiimxM3AlI8Yjxs1RtEk3xlyGZn7QlULqQlWqCRpiIrqGJe7zJPi9qQ==}
     peerDependencies:
       '@woocommerce/woocommerce-rest-api': ^1.0.1
       axios: ^1.1.2
-      stripe: ^8.132.0
+      stripe: ^14.3.0
     dependencies:
       '@sentry/node': 7.75.1
       '@sentry/tracing': 7.75.1
       '@woocommerce/woocommerce-rest-api': 1.0.1
       axios: 1.5.1
-      stripe: 8.222.0
+      stripe: 14.11.0
     transitivePeerDependencies:
       - supports-color
     dev: false
@@ -838,9 +838,9 @@ packages:
       safe-buffer: 5.2.1
     dev: false
 
-  /stripe@8.222.0:
-    resolution: {integrity: sha512-hrA79fjmN2Eb6K3kxkDzU4ODeVGGjXQsuVaAPSUro6I9MM3X+BvIsVqdphm3BXWfimAGFvUqWtPtHy25mICY1w==}
-    engines: {node: ^8.1 || >=10.*}
+  /stripe@14.11.0:
+    resolution: {integrity: sha512-NmFEkDC0PldP7CQtdPgKs5dVZA/pF+IepldbmB+Kk9B4d7EBkWnbANp0y+/zJcbRGul48s8hmQzeqNWUlWW0wg==}
+    engines: {node: '>=12.*'}
     dependencies:
       '@types/node': 20.8.9
       qs: 6.11.2
