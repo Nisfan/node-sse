@@ -355,20 +355,20 @@ async function addToCartMutation(data) {
           success: true,
         });
 
-        stream.emit(data.clientMutationId, {
+        stream.emit(data.clientId, {
           type: "addToCart",
           message: `The product ${newCartItem.name} is added to cart successfully!`,
           cart: newCart,
           cartItem: newCartItem,
         });
       } else {
-        recordClientAction(data.clientMutationId, "EndAddToCart", results);
+        recordClientAction(data.clientId, "EndAddToCart", results);
         console.log(
           "Transaction failed due to key modification by another client. Retrying...",
           results,
         );
 
-        stream.emit(data.clientMutationId, {
+        stream.emit(data.clientId, {
           type: "addToCart",
           message: "Add to cart failed",
           error: results,
@@ -493,8 +493,8 @@ async function addToCartMutation(data) {
       // }
       // });
     } else {
-      recordClientAction(data.clientMutationId, "EndAddToCart", cartResponse);
-      stream.emit(data.clientMutationId, {
+      // recordClientAction(data.clientMutationId, "EndAddToCart", cartResponse);
+      stream.emit(data.clientId, {
         type: "addToCart",
         message: "Add to cart failed",
         error: results,
@@ -514,9 +514,9 @@ async function addToCartMutation(data) {
     //   cartItemCountSessionId: data.cartItemCountSessionId,
     // });
 
-    recordClientAction(data.clientMutationId, "EndAddToCart", err);
+    // recordClientAction(data.clientMutationId, "EndAddToCart", err);
 
-    stream.emit(data.clientMutationId, {
+    stream.emit(data.clientId, {
       type: "addToCart",
       message: err.message,
       error: err,
@@ -750,6 +750,7 @@ async function updateSession(clientMutationId, wooSessionId, cart, cartItems) {
 }
 
 async function removeCartItemSession(
+  clientId,
   clientMutationId,
   wooSessionId,
   cartItemId,
@@ -775,7 +776,7 @@ async function removeCartItemSession(
     if (cartResponse.error) {
       if (cartResponse.clearSession || cartItemsFilter.length === 0) {
         console.log("clearCartSession");
-        await clearCartSession(clientMutationId);
+        await clearCartSession(clientId, clientMutationId);
 
         // const newCart = {
         //   pi: null,
@@ -798,7 +799,7 @@ async function removeCartItemSession(
       } else {
         console.log("clearCart");
 
-        await clearCartSession(clientMutationId);
+        await clearCartSession(clientId, clientMutationId);
         // await clearCart(clientMutationId, wooSessionId);
       }
     } else {
@@ -822,7 +823,7 @@ async function removeCartItemSession(
 
       if (results) {
         await resetShippingCharges(clientMutationId, newCart);
-        stream.emit(clientMutationId, {
+        stream.emit(clientId, {
           type: "removeCart",
           message: "The item is removed from cart successfully!",
           cart: newCart,
@@ -832,7 +833,7 @@ async function removeCartItemSession(
         });
       } else {
         console.log("Failed to remove cart item", results);
-        stream.emit(clientMutationId, {
+        stream.emit(clientId, {
           type: "Error",
           message: "Failed to remove cart item",
         });
@@ -846,7 +847,7 @@ async function removeCartItemSession(
   }
 }
 
-async function clearCartSession(clientMutationId) {
+async function clearCartSession(clientId, clientMutationId) {
   const cartSessionId = `cart:${clientMutationId}`;
   const cartItemsSessionId = `cartItems:${clientMutationId}`;
 
@@ -870,7 +871,7 @@ async function clearCartSession(clientMutationId) {
       hasPricedClass: false,
       hasFreeClass: false,
     };
-    stream.emit(clientMutationId, {
+    stream.emit(clientId, {
       type: "removeCart",
       message: "The item is removed from cart successfully!",
       cart: newCart,
@@ -915,13 +916,14 @@ async function clearCartSession(clientMutationId) {
 const removeCartItemMutation = async (payload) => {
   console.log("evenEmitter.removeCart.payload", payload);
 
-  const { clientMutationId, wooSessionId, cartItemId } = payload;
+  const { clientId, clientMutationId, wooSessionId, cartItemId } = payload;
 
   const result = await removeCartItemWpgraphql(payload);
   console.log("result", result);
 
   if (result.error) {
     const results = await removeCartItemSession(
+      clientId,
       clientMutationId,
       wooSessionId,
       cartItemId,
@@ -937,6 +939,7 @@ const removeCartItemMutation = async (payload) => {
       // await clearCart(clientMutationId, wooSessionId);
     } else {
       const results = await removeCartItemSession(
+        clientId,
         clientMutationId,
         wooSessionId,
         cartItemId,
