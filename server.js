@@ -60,6 +60,7 @@ const redis = new Redis({
 app.options(
   "*",
   cors({
+    origin: allowOrigin,
     credentials: true,
   }),
 ); // include before other routes
@@ -975,6 +976,16 @@ async function eventsHandler(request, response, next) {
   const origin = request.headers.origin;
   console.log("origin", origin);
   console.log("host", request.headers.host);
+  console.log("method", request.method);
+
+  if (request.method === "OPTIONS") {
+    const headers = {
+      "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+      "Access-Control-Allow-Headers": "*",
+    };
+    response.writeHead(200, headers);
+    return;
+  }
 
   const headers = {
     "Content-Type": "text/event-stream",
