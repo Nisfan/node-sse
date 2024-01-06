@@ -996,7 +996,7 @@ async function eventsHandler(request, response, next) {
       ),
     );
 
-    response.flush();
+    // response.flush();
   }
 
   const clientId = request.params.id;
