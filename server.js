@@ -934,7 +934,7 @@ const removeCartItemMutation = async (payload) => {
     // } else {
     // }
   } else if (result.response) {
-    if (result.response.clearCart) {
+    if (result.response.cartIsEmpty) {
       await clearCartSession(clientMutationId);
       // await clearCart(clientMutationId, wooSessionId);
     } else {

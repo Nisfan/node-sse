@@ -13,7 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@simplur/netlify-functions-helper": "0.0.62-next-js.0",
+    "@simplur/netlify-functions-helper": "0.0.64-next-js.0",
     "async-mutex": "^0.4.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
