@@ -990,24 +990,34 @@ async function eventsHandler(request, response, next) {
     return;
   }
 
-  const headers = {
-    "Content-Type": "text/event-stream",
-    Connection: "keep-alive",
-    "Cache-Control": "no-cache,no-transform",
-    "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
-    "Access-Control-Allow-Headers": "*",
-  };
+  // const headers = {
+  //   "Content-Type": "text/event-stream",
+  //   Connection: "keep-alive",
+  //   "Cache-Control": "no-cache",
+  //   "Access-Control-Allow-Origin": allowOrigin,
+  //   "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+  //   "Access-Control-Allow-Headers": "*",
+  // };
+  //
+  // response.writeHead(200, headers);
 
-  response.writeHead(200, headers);
-
-  const encoder = new TextEncoder();
+  // const encoder = new TextEncoder();
+  response.setHeader("Content-Type", "text/event-stream");
+  response.setHeader("Cache-Control", "no-cache");
+  response.setHeader("Connection", "keep-alive");
+  response.setHeader("Access-Control-Allow-Origin", allowOrigin);
+  response.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+  );
+  response.setHeader("Access-Control-Allow-Headers", "*");
+  response.flushHeaders();
 
   function eventListener(event, data) {
     console.log("event", event);
     // console.log("event.data", data);
 
-    response.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    response.write(`data: ${JSON.stringify(event)}\n\n`);
     //client.write(`data: ${JSON.stringify(eventData)}\n\n`);
 
     // response.flush();
