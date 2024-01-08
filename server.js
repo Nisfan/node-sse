@@ -784,6 +784,7 @@ async function removeCartItemSession(
 
     console.log("cartItems", cartItems);
     const cartItemsFilter = cartItems.filter((ci) => ci.cartId !== cartItemId);
+    console.log("cartItemsFilter", cartItemsFilter);
 
     // console.log("cartResponse.removeCartItemSession", cartResponse);
     if (cartResponse.error) {
@@ -864,35 +865,58 @@ async function clearCartSession(clientId, clientMutationId) {
   const cartSessionId = `cart:${clientMutationId}`;
   const cartItemsSessionId = `cartItems:${clientMutationId}`;
 
-  const [cart, cartItems] = await redis
-    .multi()
-    .del(cartSessionId)
-    .del(cartItemsSessionId)
-    .exec();
+  console.log("cartSessionId", cartSessionId);
+  console.log("cartItemsSessionId", cartItemsSessionId);
+  console.log("clientMutationId", clientMutationId);
 
-  console.log("clearCartSession", cart);
-  console.log("clearCartSession", cartItems);
-  if (!cart[0] && !cartItems[0]) {
-    console.log("sending notification");
-    const newCart = {
-      pi: null,
-      coupons: [],
-      subtotal: 0,
-      taxValue: 0,
-      totalDiscount: 0,
-      hasProducts: false,
-      hasPricedClass: false,
-      hasFreeClass: false,
-    };
-    stream.emit(clientId, {
-      type: "removeCart",
-      message: "The item is removed from cart successfully!",
-      cart: newCart,
-      cartItem: {
-        cartId: null,
-      },
-    });
-  }
+  const multi = redis.multi();
+
+  // Add DEL commands for the keys within the transaction
+  multi.del(cartSessionId);
+  multi.del(cartItemsSessionId);
+
+  // Execute the transaction using exec()
+  multi.exec((err, results) => {
+    if (err) {
+      console.error("Error deleting keys:", err);
+    } else {
+      // results is an array of replies for each DEL command
+      console.log(`Deleted ${results[0]} keys with ${key1}`);
+      console.log(`Deleted ${results[1]} keys with ${key2}`);
+
+      console.log("sending notification");
+      const newCart = {
+        pi: null,
+        coupons: [],
+        subtotal: 0,
+        taxValue: 0,
+        totalDiscount: 0,
+        hasProducts: false,
+        hasPricedClass: false,
+        hasFreeClass: false,
+      };
+      stream.emit(clientId, {
+        type: "removeCart",
+        message: "The item is removed from cart successfully!",
+        cart: newCart,
+        cartItem: {
+          cartId: null,
+        },
+      });
+    }
+  });
+
+  // const [cart, cartItems] = await redis
+  //   .multi()
+  //   .del(cartSessionId)
+  //   .del(cartItemsSessionId)
+  //   .exec();
+  //
+  // console.log("clearCartSession", cart);
+  // console.log("clearCartSession", cartItems);
+  // if (!cart[0] && !cartItems[0]) {
+  //   console.log("sending notification");
+  // }
 }
 
 // async function clearCart(clientMutationId, wooSessionId) {
