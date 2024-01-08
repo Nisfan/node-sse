@@ -837,14 +837,14 @@ async function removeCartItemSession(
 
       if (results) {
         await resetShippingCharges(clientMutationId, newCart);
-        // stream.emit(clientId, {
-        //   type: "removeCart",
-        //   message: "The item is removed from cart successfully!",
-        //   cart: newCart,
-        //   cartItem: {
-        //     cartId: cartItemId,
-        //   },
-        // });
+        stream.emit(clientId, {
+          type: "removeCart",
+          message: "The item is removed from cart successfully!",
+          cart: newCart,
+          cartItem: {
+            cartId: cartItemId,
+          },
+        });
       } else {
         console.log("Failed to remove cart item", results);
         stream.emit(clientId, {
@@ -881,8 +881,8 @@ async function clearCartSession(clientId, clientMutationId) {
       console.error("Error deleting keys:", err);
     } else {
       // results is an array of replies for each DEL command
-      console.log(`Deleted ${results[0]} keys with ${key1}`);
-      console.log(`Deleted ${results[1]} keys with ${key2}`);
+      console.log(`Deleted ${results[0]} keys with ${cartSessionId}`);
+      console.log(`Deleted ${results[1]} keys with ${cartItemsSessionId}`);
 
       console.log("sending notification");
       const newCart = {
@@ -972,7 +972,7 @@ const removeCartItemMutation = async (payload) => {
     // }
   } else if (result.response) {
     if (result.response.cartIsEmpty) {
-      await clearCartSession(clientMutationId);
+      await clearCartSession(clientId, clientMutationId);
       // await clearCart(clientMutationId, wooSessionId);
     } else {
       const results = await removeCartItemSession(
