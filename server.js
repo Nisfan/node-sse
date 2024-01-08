@@ -36,7 +36,7 @@ const redisHost =
 const allowOrigin =
   process.env.NODE_ENV === "production"
     ? "https://www.rockymountainsewing.com"
-    : "http://localhost:3000";
+    : "https://simplur-next-app-git-feat-refactor-sse-simplur.vercel.app";
 
 const stream = new EventEmitter();
 const redis = new Redis({
@@ -741,17 +741,22 @@ async function updateSession(clientMutationId, wooSessionId, cart, cartItems) {
   const expiresIn = getExpiresIn(wooSessionId);
   let results = null;
   if (expiresIn) {
+    console.log("expiresIn", expiresIn);
     results = await redis
       .multi()
       .set(cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
       .set(cartItemsSessionId, JSON.stringify(cartItems), "EX", expiresIn)
       .exec();
+
+    console.log("results", results);
   } else {
+    console.log("expiresIn not found");
     results = await redis
       .multi()
       .set(cartSessionId, JSON.stringify(newCart))
       .set(cartItemsSessionId, JSON.stringify(cartItems))
       .exec();
+    console.log("results", results);
   }
 
   return results;
