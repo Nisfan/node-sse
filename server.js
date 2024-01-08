@@ -837,14 +837,14 @@ async function removeCartItemSession(
 
       if (results) {
         await resetShippingCharges(clientMutationId, newCart);
-        stream.emit(clientId, {
-          type: "removeCart",
-          message: "The item is removed from cart successfully!",
-          cart: newCart,
-          cartItem: {
-            cartId: cartItemId,
-          },
-        });
+        // stream.emit(clientId, {
+        //   type: "removeCart",
+        //   message: "The item is removed from cart successfully!",
+        //   cart: newCart,
+        //   cartItem: {
+        //     cartId: cartItemId,
+        //   },
+        // });
       } else {
         console.log("Failed to remove cart item", results);
         stream.emit(clientId, {
