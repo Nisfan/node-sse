@@ -30,15 +30,13 @@ const nodeCache = new NodeCache();
 const PORT = Number(process.env.PORT);
 const REDIS_PORT = 6379;
 
-const app = express();
-
 const redisHost =
   process.env.NODE_ENV === "production" ? "127.0.0.1" : "5.161.99.138";
 
 const allowOrigin =
   process.env.NODE_ENV === "production"
     ? "https://www.rockymountainsewing.com"
-    : "https://simplur-next-app-git-feat-refactor-sse-simplur.vercel.app";
+    : "http://localhost:3000";
 
 const stream = new EventEmitter();
 const redis = new Redis({
@@ -56,20 +54,30 @@ const redis = new Redis({
 //   client: redis,
 //   // prefix: "myapp:",
 // });
+const app = express();
 
-app.options(
-  "*",
-  cors({
-    origin: allowOrigin,
-    credentials: true,
-  }),
-); // include before other routes
 app.use(
   cors({
     origin: allowOrigin,
-    credentials: true,
+    credentials: true, // If needed for cookies or authentication
   }),
 );
+app.options("*", cors());
+// app.options(
+//   "*",
+//   cors({
+//     origin: "*",
+//     // credentials: true,
+//   }),
+// ); // include before other routes
+// app.use(
+//   cors({
+//     origin: "*",
+//     // credentials: true,
+//   }),
+// );
+// app.options("/api/sse/*", cors()); // for preflight requests
+// app.use("/api/sse/*", cors()); // for actual requests
 app.use(express.json());
 // app.use(
 //   session({
@@ -984,34 +992,37 @@ async function eventsHandler(request, response, next) {
   if (request.method === "OPTIONS") {
     const headers = {
       "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
-      "Access-Control-Allow-Headers": "*",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     };
     response.writeHead(200, headers);
     return;
   }
 
-  // const headers = {
-  //   "Content-Type": "text/event-stream",
-  //   Connection: "keep-alive",
-  //   "Cache-Control": "no-cache",
-  //   "Access-Control-Allow-Origin": allowOrigin,
-  //   "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
-  //   "Access-Control-Allow-Headers": "*",
-  // };
-  //
-  // response.writeHead(200, headers);
+  const headers = {
+    "Content-Type": "text/event-stream",
+    Connection: "keep-alive",
+    "Cache-Control": "no-cache",
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": "true",
+  };
+
+  response.writeHead(200, headers);
 
   // const encoder = new TextEncoder();
-  response.setHeader("Content-Type", "text/event-stream");
-  response.setHeader("Cache-Control", "no-cache");
-  response.setHeader("Connection", "keep-alive");
-  response.setHeader("Access-Control-Allow-Origin", allowOrigin);
-  response.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET,OPTIONS,PATCH,DELETE,POST,PUT",
-  );
-  response.setHeader("Access-Control-Allow-Headers", "*");
-  response.flushHeaders();
+  // response.setHeader("Content-Type", "text/event-stream");
+  // response.setHeader("Cache-Control", "no-cache");
+  // response.setHeader("Connection", "keep-alive");
+  // response.setHeader("Access-Control-Allow-Origin", "*");
+  // response.setHeader(
+  //   "Access-Control-Allow-Methods",
+  //   "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+  // );
+  //
+  // response.setHeader("Access-Control-Allow-Headers", "*");
+  // // response.setHeader("Access-Control-Allow-Credentials", "true");
+  // response.writeHead(200, headers);
 
   function eventListener(event, data) {
     console.log("event", event);
