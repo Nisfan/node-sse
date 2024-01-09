@@ -5,14 +5,9 @@ import { Redis } from "ioredis";
 // import { isbot } from "isbot";
 import NodeCache from "node-cache";
 
-// import { LRUCache } from "lru-cache";
-// import { Mutex } from "async-mutex";
-// import RedisStore from "connect-redis";
-
 import { Cart, SimplurConfig } from "@simplur/netlify-functions-helper";
 import dotenv from "dotenv";
 
-// import session from "express-session";
 import pkg from "./package.json" assert { type: "json" };
 
 const envFileName = `.env.${process.env.NODE_ENV || "development"}`;
@@ -22,10 +17,7 @@ dotenv.config({ path: envFileName });
 console.log(process.env);
 console.log(`Running version v${pkg.version}`);
 
-// const lruOptions = {}
-// const clients = new LRUCache(options)
 const nodeCache = new NodeCache();
-// let clients = [];
 
 const PORT = Number(process.env.PORT);
 const REDIS_PORT = 6379;
@@ -36,7 +28,7 @@ const redisHost =
 const allowOrigin =
   process.env.NODE_ENV === "production"
     ? "https://www.rockymountainsewing.com"
-    : "https://simplur-next-app-git-feat-refactor-sse-simplur.vercel.app";
+    : "http://localhost:3000";
 
 const stream = new EventEmitter();
 const redis = new Redis({
@@ -45,48 +37,17 @@ const redis = new Redis({
   connectTimeout: 10000,
   username: "default", // needs Redis >= 6
   password: "fNxDZQYnYqMiBxC",
-}); // 192.168.1.1:6379
-// const sub = new Redis(redisPort, redisHost); // 192.168.1.1:6379
-// const mutex = new Mutex(); // creates a shared mutex instance
-
-// Initialize store.
-// const redisStore = new RedisStore({
-//   client: redis,
-//   // prefix: "myapp:",
-// });
+});
 const app = express();
 
 app.use(
   cors({
     origin: allowOrigin,
-    credentials: true, // If needed for cookies or authentication
+    credentials: true,
   }),
 );
 app.options("*", cors());
-// app.options(
-//   "*",
-//   cors({
-//     origin: "*",
-//     // credentials: true,
-//   }),
-// ); // include before other routes
-// app.use(
-//   cors({
-//     origin: "*",
-//     // credentials: true,
-//   }),
-// );
-// app.options("/api/sse/*", cors()); // for preflight requests
-// app.use("/api/sse/*", cors()); // for actual requests
 app.use(express.json());
-// app.use(
-//   session({
-//     secret: "session_secret____123!@simplur",
-//     resave: false,
-//     saveUninitialized: false,
-//     store: redisStore,
-//   }),
-// );
 
 SimplurConfig.initialize({
   wpUrl: process.env.WP_URL,
@@ -111,23 +72,6 @@ SimplurConfig.initialize({
 app.listen(PORT, () => {
   console.log(`Events service listening at http://localhost:${PORT}`);
 });
-
-async function getCart(cartSessionId) {
-  const cart = await redis.get(cartSessionId);
-  if (cart) {
-    return JSON.parse(cart);
-  }
-  return null;
-}
-
-// class CartError extends Error {
-//   type;
-//
-//   constructor(type, message) {
-//     super(message);
-//     this.type = type;
-//   }
-// }
 
 async function getCartItems(sessionId) {
   const cartItemJSON = await redis.get(sessionId);
@@ -274,12 +218,6 @@ async function addToCartMutation(data) {
 
     console.log("cartResponse", cartResponse);
 
-    recordClientAction(
-      data.clientMutationId,
-      "AddToCartResponse",
-      cartResponse,
-    );
-
     if (cartResponse.wooSessionId) {
       // mutex.runExclusive(async () => {
       // if (oldCart && oldCart.version !== data.cartVersion) {
@@ -359,10 +297,6 @@ async function addToCartMutation(data) {
         .exec();
 
       if (results) {
-        recordClientAction(data.clientMutationId, "EndAddToCart", {
-          success: true,
-        });
-
         stream.emit(data.clientId, {
           type: "addToCart",
           message: `The product ${newCartItem.name} is added to cart successfully!`,
@@ -370,7 +304,6 @@ async function addToCartMutation(data) {
           cartItem: newCartItem,
         });
       } else {
-        recordClientAction(data.clientId, "EndAddToCart", results);
         console.log(
           "Transaction failed due to key modification by another client. Retrying...",
           results,
@@ -501,7 +434,6 @@ async function addToCartMutation(data) {
       // }
       // });
     } else {
-      // recordClientAction(data.clientMutationId, "EndAddToCart", cartResponse);
       stream.emit(data.clientId, {
         type: "addToCart",
         message: "Add to cart failed",
@@ -522,8 +454,6 @@ async function addToCartMutation(data) {
     //   cartItemCountSessionId: data.cartItemCountSessionId,
     // });
 
-    // recordClientAction(data.clientMutationId, "EndAddToCart", err);
-
     stream.emit(data.clientId, {
       type: "addToCart",
       message: err.message,
@@ -533,29 +463,6 @@ async function addToCartMutation(data) {
       },
     });
   }
-}
-
-function recordClientAction(id, type, data) {
-  // const values = nodeCache.get(id);
-  // if (!values) {
-  //   console.log("invalid client id", id);
-  //
-  //   nodeCache.set(id, [
-  //     {
-  //       typ: type,
-  //       data,
-  //       at: new Date(),
-  //     },
-  //   ]);
-  // } else {
-  //   values.push({
-  //     typ: type,
-  //     data,
-  //     at: new Date(),
-  //   });
-  //
-  //   nodeCache.set(id, values);
-  // }
 }
 
 stream.on("addToCart", async function (data) {
@@ -570,87 +477,12 @@ stream.on("removeCart", async (payload) => {
   }
 });
 
-// async function clearCartSessionData(
-//   cartSessionId,
-//   wooSessionId,
-//   cartItemSessionId,
-//   cartItemCountSessionId,
-// ) {
-//   const expiresIn = getExpiresIn(wooSessionId);
-//
-//   const cartPayload = {
-//     coupons: [],
-//     subtotal: 0,
-//     totalDiscount: 0,
-//     at: Date.now(),
-//   };
-//
-//   await redis.set(cartSessionId, JSON.stringify(cartPayload), "EX", expiresIn);
-//
-//   await redis.del(cartItemSessionId);
-//   await redis.del(cartItemCountSessionId);
-// }
-
 function getFormattedCoupons(appliedCoupons = []) {
   return appliedCoupons.map((c) => ({
     code: c.code,
     amount: c.discountAmount,
   }));
 }
-
-// async function clearCart(clientMutationId, wooSessionId) {
-//   const cart = new Cart();
-//   await cart.clearCart(clientMutationId, wooSessionId);
-//
-//   const cartItemsSessionId = `cartItems:${clientMutationId}`;
-//   const cartSessionId = `cart:${clientMutationId}`;
-//   const results = await redis
-//     .multi()
-//     .del(cartSessionId)
-//     .del(cartItemsSessionId)
-//     .exec();
-// }
-
-// stream.on("clearCart", async (payload) => {
-//   console.log("evenEmitter.clearCart.payload", payload);
-//
-//   const { sessionId, wooSessionId, cartItem } =
-//     payload;
-//
-//   const oldCartJSON = await redis.get(cartSessionId);
-//   console.log("clearCart.oldCartJSON", oldCartJSON);
-//
-//   let cartSessionData = {};
-//   if (oldCartJSON) {
-//     cartSessionData = JSON.parse(oldCartJSON);
-//   }
-//
-//   try {
-//     await clearCart(sessionId, wooSessionId)
-//
-//     const cartItemsSessionId = `cartItems:${clientMutationId}`;
-//     const cartSessionId = `cart:${clientMutationId}`;
-//     const results = await redis
-//       .multi()
-//       .del(cartSessionId)
-//       .del(cartItemsSessionId)
-//       .exec();
-//
-//     if (cartItem) {
-//       stream.emit("channel", sessionId, {
-//         type: "removeCart",
-//         message: "The item is removed from cart successfully!",
-//         cart: null,
-//         cartItem: {
-//           cartId: cartItem.cartId,
-//         },
-//       });
-//     }
-//   } catch (error) {
-//     //TODO: I must add `cartItem` to session based on error
-//     console.error(error);
-//   }
-// });
 
 async function removeCartItemWpgraphql(payload) {
   const cart = new Cart();
@@ -791,30 +623,10 @@ async function removeCartItemSession(
       if (cartResponse.clearSession || cartItemsFilter.length === 0) {
         console.log("clearCartSession");
         await clearCartSession(clientId, clientMutationId);
-
-        // const newCart = {
-        //   pi: null,
-        //   coupons: [],
-        //   subtotal: 0,
-        //   taxValue: 0,
-        //   totalDiscount: 0,
-        //   hasProducts: false,
-        //   hasPricedClass: false,
-        //   hasFreeClass: false,
-        // };
-        // stream.emit(clientMutationId, {
-        //   type: "removeCart",
-        //   message: "The item is removed from cart successfully!",
-        //   cart: newCart,
-        //   cartItem: {
-        //     cartId: null,
-        //   },
-        // });
       } else {
         console.log("clearCart");
 
         await clearCartSession(clientId, clientMutationId);
-        // await clearCart(clientMutationId, wooSessionId);
       }
     } else {
       const appliedCoupons = getFormattedCoupons(
@@ -905,50 +717,7 @@ async function clearCartSession(clientId, clientMutationId) {
       });
     }
   });
-
-  // const [cart, cartItems] = await redis
-  //   .multi()
-  //   .del(cartSessionId)
-  //   .del(cartItemsSessionId)
-  //   .exec();
-  //
-  // console.log("clearCartSession", cart);
-  // console.log("clearCartSession", cartItems);
-  // if (!cart[0] && !cartItems[0]) {
-  //   console.log("sending notification");
-  // }
 }
-
-// async function clearCart(clientMutationId, wooSessionId) {
-//   const cart = new Cart();
-//   cart.clearCart(null, wooSessionId);
-//
-//   const results = await clearCartSession(clientMutationId);
-//   await resetShippingCharges(clientMutationId, null);
-//
-//   if (results) {
-//     const newCart = {
-//       pi: null,
-//       coupons: [],
-//       subtotal: 0,
-//       taxValue: 0,
-//       totalDiscount: 0,
-//       hasProducts: false,
-//       hasPricedClass: false,
-//       hasFreeClass: false,
-//     };
-//     stream.emit(clientMutationId, {
-//       type: "removeCart",
-//       message: "The item is removed from cart successfully!",
-//       cart: newCart,
-//       cartItem: {
-//         cartId: null,
-//       },
-//     });
-//
-//     return true;
-//   }
-// }
 
 const removeCartItemMutation = async (payload) => {
   console.log("evenEmitter.removeCart.payload", payload);
@@ -966,10 +735,6 @@ const removeCartItemMutation = async (payload) => {
       cartItemId,
       result,
     );
-    // if (result.clearSession) {
-    //   await clearCartSession(clientMutationId);
-    // } else {
-    // }
   } else if (result.response) {
     if (result.response.cartIsEmpty) {
       await clearCartSession(clientId, clientMutationId);
@@ -990,7 +755,6 @@ async function removeCartHandler(request, response, next) {
   const payload = request.body;
   console.log("removeCart.payload", payload);
 
-  // recordClientAction(payload.clientMutationId, "BeginRemoveCart", payload);
   stream.emit("removeCart", payload);
 
   response.json({
@@ -998,19 +762,6 @@ async function removeCartHandler(request, response, next) {
     success: true,
   });
 }
-
-// async function clearCartHandler(request, response, next) {
-//   const payload = request.body;
-//   console.log("clearCart.payload", payload);
-//
-//   stream.emit("clearCart", payload);
-//
-//   response.json({
-//     error: null,
-//     success: true,
-//   });
-//   // const cartItems = await redis.get(payload.cartItemSessionId)
-// }
 
 async function eventsHandler(request, response, next) {
   const origin = request.headers.origin;
@@ -1078,7 +829,6 @@ async function eventsHandler(request, response, next) {
     //   isBot: isbot(request.headers),
     // };
     //
-    // recordClientAction(clientId, "NewClient", payload);
     console.log("New client client id:", clientId);
   }
 
@@ -1115,8 +865,6 @@ app.post("/api/addToCart", function (req, res) {
   const payload = req.body;
   console.log("addToCart.handler.payload", payload);
 
-  // recordClientAction(payload.clientMutationId, "BeginAddToCart", payload);
-
   stream.emit("addToCart", payload);
 
   res.json({
@@ -1129,33 +877,7 @@ app.post("/api/removeCart", removeCartHandler);
 // app.post("/api/clearCart", clearCartHandler);
 
 app.get("/api/status", function (request, response, next) {
-  // const allClient = nodeCache.keys().map((k) => {
-  //   const value = nodeCache.get(k);
-  //   return { id: k, actions: value };
-  // });
-
   response.json({
     message: "ready",
-    // clients: [],
   });
 });
-
-// app.get("/api/getSessionId", function (request, response, next) {
-//   console.log("request.headers", request.headers);
-//   console.log("request.cookies", request.cookies);
-//   const session = request.session.user;
-//
-//   console.log("session", session);
-//   let sessionId = session ? request.sessionID : null;
-//   response.json({
-//     sessionId,
-//   });
-// });
-//
-// app.get("/api/setSession", function (request, response, next) {
-//   request.session.user = { user: "test@yahoo.com" };
-//
-//   response.json({
-//     sessionId: request.sessionID,
-//   });
-// });
