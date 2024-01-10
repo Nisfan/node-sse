@@ -830,7 +830,7 @@ async function eventsHandler(request, response, next) {
     // };
     //
     console.log("New client client id:", clientId);
-    console.log("headers", JSON.stringify(req.headers, null, 2));
+    console.log("headers", JSON.stringify(request.headers, null, 2));
     console.log("clients.counts", nodeCache.keys.length);
   } else {
     console.log("Client is already exists", clientId);
