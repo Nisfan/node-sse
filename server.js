@@ -2,17 +2,12 @@ import express from "express";
 import cors from "cors";
 import EventEmitter from "events";
 import { Redis } from "ioredis";
-// import { isbot } from "isbot";
+import { isbot } from "isbot";
 import NodeCache from "node-cache";
-
-// import { LRUCache } from "lru-cache";
-// import { Mutex } from "async-mutex";
-// import RedisStore from "connect-redis";
 
 import { Cart, SimplurConfig } from "@simplur/netlify-functions-helper";
 import dotenv from "dotenv";
 
-// import session from "express-session";
 import pkg from "./package.json" assert { type: "json" };
 
 const envFileName = `.env.${process.env.NODE_ENV || "development"}`;
@@ -22,18 +17,18 @@ dotenv.config({ path: envFileName });
 console.log(process.env);
 console.log(`Running version v${pkg.version}`);
 
-// const lruOptions = {}
-// const clients = new LRUCache(options)
 const nodeCache = new NodeCache();
-// let clients = [];
 
 const PORT = Number(process.env.PORT);
 const REDIS_PORT = 6379;
 
-const app = express();
-
 const redisHost =
   process.env.NODE_ENV === "production" ? "127.0.0.1" : "5.161.99.138";
+
+const allowOrigin =
+  process.env.NODE_ENV === "production"
+    ? "https://www.rockymountainsewing.com"
+    : "https://simplur-next-app-git-feat-refactor-sse-simplur.vercel.app";
 
 const stream = new EventEmitter();
 const redis = new Redis({
@@ -42,26 +37,17 @@ const redis = new Redis({
   connectTimeout: 10000,
   username: "default", // needs Redis >= 6
   password: "fNxDZQYnYqMiBxC",
-}); // 192.168.1.1:6379
-// const sub = new Redis(redisPort, redisHost); // 192.168.1.1:6379
-// const mutex = new Mutex(); // creates a shared mutex instance
+});
+const app = express();
 
-// Initialize store.
-// const redisStore = new RedisStore({
-//   client: redis,
-//   // prefix: "myapp:",
-// });
-
-app.use(cors());
+app.use(
+  cors({
+    origin: allowOrigin,
+    credentials: true,
+  }),
+);
+app.options("*", cors());
 app.use(express.json());
-// app.use(
-//   session({
-//     secret: "session_secret____123!@simplur",
-//     resave: false,
-//     saveUninitialized: false,
-//     store: redisStore,
-//   }),
-// );
 
 SimplurConfig.initialize({
   wpUrl: process.env.WP_URL,
@@ -86,23 +72,6 @@ SimplurConfig.initialize({
 app.listen(PORT, () => {
   console.log(`Events service listening at http://localhost:${PORT}`);
 });
-
-async function getCart(cartSessionId) {
-  const cart = await redis.get(cartSessionId);
-  if (cart) {
-    return JSON.parse(cart);
-  }
-  return null;
-}
-
-// class CartError extends Error {
-//   type;
-//
-//   constructor(type, message) {
-//     super(message);
-//     this.type = type;
-//   }
-// }
 
 async function getCartItems(sessionId) {
   const cartItemJSON = await redis.get(sessionId);
@@ -249,12 +218,6 @@ async function addToCartMutation(data) {
 
     console.log("cartResponse", cartResponse);
 
-    recordClientAction(
-      data.clientMutationId,
-      "AddToCartResponse",
-      cartResponse,
-    );
-
     if (cartResponse.wooSessionId) {
       // mutex.runExclusive(async () => {
       // if (oldCart && oldCart.version !== data.cartVersion) {
@@ -334,24 +297,19 @@ async function addToCartMutation(data) {
         .exec();
 
       if (results) {
-        recordClientAction(data.clientMutationId, "EndAddToCart", {
-          success: true,
-        });
-
-        stream.emit(data.clientMutationId, {
+        stream.emit(data.clientId, {
           type: "addToCart",
           message: `The product ${newCartItem.name} is added to cart successfully!`,
           cart: newCart,
           cartItem: newCartItem,
         });
       } else {
-        recordClientAction(data.clientMutationId, "EndAddToCart", results);
         console.log(
           "Transaction failed due to key modification by another client. Retrying...",
           results,
         );
 
-        stream.emit(data.clientMutationId, {
+        stream.emit(data.clientId, {
           type: "addToCart",
           message: "Add to cart failed",
           error: results,
@@ -476,8 +434,7 @@ async function addToCartMutation(data) {
       // }
       // });
     } else {
-      recordClientAction(data.clientMutationId, "EndAddToCart", cartResponse);
-      stream.emit(data.clientMutationId, {
+      stream.emit(data.clientId, {
         type: "addToCart",
         message: "Add to cart failed",
         error: results,
@@ -497,9 +454,7 @@ async function addToCartMutation(data) {
     //   cartItemCountSessionId: data.cartItemCountSessionId,
     // });
 
-    recordClientAction(data.clientMutationId, "EndAddToCart", err);
-
-    stream.emit(data.clientMutationId, {
+    stream.emit(data.clientId, {
       type: "addToCart",
       message: err.message,
       error: err,
@@ -508,29 +463,6 @@ async function addToCartMutation(data) {
       },
     });
   }
-}
-
-function recordClientAction(id, type, data) {
-  // const values = nodeCache.get(id);
-  // if (!values) {
-  //   console.log("invalid client id", id);
-  //
-  //   nodeCache.set(id, [
-  //     {
-  //       typ: type,
-  //       data,
-  //       at: new Date(),
-  //     },
-  //   ]);
-  // } else {
-  //   values.push({
-  //     typ: type,
-  //     data,
-  //     at: new Date(),
-  //   });
-  //
-  //   nodeCache.set(id, values);
-  // }
 }
 
 stream.on("addToCart", async function (data) {
@@ -545,87 +477,12 @@ stream.on("removeCart", async (payload) => {
   }
 });
 
-// async function clearCartSessionData(
-//   cartSessionId,
-//   wooSessionId,
-//   cartItemSessionId,
-//   cartItemCountSessionId,
-// ) {
-//   const expiresIn = getExpiresIn(wooSessionId);
-//
-//   const cartPayload = {
-//     coupons: [],
-//     subtotal: 0,
-//     totalDiscount: 0,
-//     at: Date.now(),
-//   };
-//
-//   await redis.set(cartSessionId, JSON.stringify(cartPayload), "EX", expiresIn);
-//
-//   await redis.del(cartItemSessionId);
-//   await redis.del(cartItemCountSessionId);
-// }
-
 function getFormattedCoupons(appliedCoupons = []) {
   return appliedCoupons.map((c) => ({
     code: c.code,
     amount: c.discountAmount,
   }));
 }
-
-// async function clearCart(clientMutationId, wooSessionId) {
-//   const cart = new Cart();
-//   await cart.clearCart(clientMutationId, wooSessionId);
-//
-//   const cartItemsSessionId = `cartItems:${clientMutationId}`;
-//   const cartSessionId = `cart:${clientMutationId}`;
-//   const results = await redis
-//     .multi()
-//     .del(cartSessionId)
-//     .del(cartItemsSessionId)
-//     .exec();
-// }
-
-// stream.on("clearCart", async (payload) => {
-//   console.log("evenEmitter.clearCart.payload", payload);
-//
-//   const { sessionId, wooSessionId, cartItem } =
-//     payload;
-//
-//   const oldCartJSON = await redis.get(cartSessionId);
-//   console.log("clearCart.oldCartJSON", oldCartJSON);
-//
-//   let cartSessionData = {};
-//   if (oldCartJSON) {
-//     cartSessionData = JSON.parse(oldCartJSON);
-//   }
-//
-//   try {
-//     await clearCart(sessionId, wooSessionId)
-//
-//     const cartItemsSessionId = `cartItems:${clientMutationId}`;
-//     const cartSessionId = `cart:${clientMutationId}`;
-//     const results = await redis
-//       .multi()
-//       .del(cartSessionId)
-//       .del(cartItemsSessionId)
-//       .exec();
-//
-//     if (cartItem) {
-//       stream.emit("channel", sessionId, {
-//         type: "removeCart",
-//         message: "The item is removed from cart successfully!",
-//         cart: null,
-//         cartItem: {
-//           cartId: cartItem.cartId,
-//         },
-//       });
-//     }
-//   } catch (error) {
-//     //TODO: I must add `cartItem` to session based on error
-//     console.error(error);
-//   }
-// });
 
 async function removeCartItemWpgraphql(payload) {
   const cart = new Cart();
@@ -716,23 +573,29 @@ async function updateSession(clientMutationId, wooSessionId, cart, cartItems) {
   const expiresIn = getExpiresIn(wooSessionId);
   let results = null;
   if (expiresIn) {
+    console.log("expiresIn", expiresIn);
     results = await redis
       .multi()
       .set(cartSessionId, JSON.stringify(newCart), "EX", expiresIn)
       .set(cartItemsSessionId, JSON.stringify(cartItems), "EX", expiresIn)
       .exec();
+
+    console.log("results", results);
   } else {
+    console.log("expiresIn not found");
     results = await redis
       .multi()
       .set(cartSessionId, JSON.stringify(newCart))
       .set(cartItemsSessionId, JSON.stringify(cartItems))
       .exec();
+    console.log("results", results);
   }
 
   return results;
 }
 
 async function removeCartItemSession(
+  clientId,
   clientMutationId,
   wooSessionId,
   cartItemId,
@@ -753,36 +616,17 @@ async function removeCartItemSession(
 
     console.log("cartItems", cartItems);
     const cartItemsFilter = cartItems.filter((ci) => ci.cartId !== cartItemId);
+    console.log("cartItemsFilter", cartItemsFilter);
 
     // console.log("cartResponse.removeCartItemSession", cartResponse);
     if (cartResponse.error) {
       if (cartResponse.clearSession || cartItemsFilter.length === 0) {
         console.log("clearCartSession");
-        await clearCartSession(clientMutationId);
-
-        // const newCart = {
-        //   pi: null,
-        //   coupons: [],
-        //   subtotal: 0,
-        //   taxValue: 0,
-        //   totalDiscount: 0,
-        //   hasProducts: false,
-        //   hasPricedClass: false,
-        //   hasFreeClass: false,
-        // };
-        // stream.emit(clientMutationId, {
-        //   type: "removeCart",
-        //   message: "The item is removed from cart successfully!",
-        //   cart: newCart,
-        //   cartItem: {
-        //     cartId: null,
-        //   },
-        // });
+        await clearCartSession(clientId, clientMutationId);
       } else {
         console.log("clearCart");
 
-        await clearCartSession(clientMutationId);
-        // await clearCart(clientMutationId, wooSessionId);
+        await clearCartSession(clientId, clientMutationId);
       }
     } else {
       const appliedCoupons = getFormattedCoupons(
@@ -805,7 +649,7 @@ async function removeCartItemSession(
 
       if (results) {
         await resetShippingCharges(clientMutationId, newCart);
-        stream.emit(clientMutationId, {
+        stream.emit(clientId, {
           type: "removeCart",
           message: "The item is removed from cart successfully!",
           cart: newCart,
@@ -815,7 +659,7 @@ async function removeCartItemSession(
         });
       } else {
         console.log("Failed to remove cart item", results);
-        stream.emit(clientMutationId, {
+        stream.emit(clientId, {
           type: "Error",
           message: "Failed to remove cart item",
         });
@@ -829,97 +673,75 @@ async function removeCartItemSession(
   }
 }
 
-async function clearCartSession(clientMutationId) {
+async function clearCartSession(clientId, clientMutationId) {
   const cartSessionId = `cart:${clientMutationId}`;
   const cartItemsSessionId = `cartItems:${clientMutationId}`;
 
-  const [cart, cartItems] = await redis
-    .multi()
-    .del(cartSessionId)
-    .del(cartItemsSessionId)
-    .exec();
+  console.log("cartSessionId", cartSessionId);
+  console.log("cartItemsSessionId", cartItemsSessionId);
+  console.log("clientMutationId", clientMutationId);
 
-  console.log("clearCartSession", cart);
-  console.log("clearCartSession", cartItems);
-  if (!cart[0] && !cartItems[0]) {
-    console.log("sending notification");
-    const newCart = {
-      pi: null,
-      coupons: [],
-      subtotal: 0,
-      taxValue: 0,
-      totalDiscount: 0,
-      hasProducts: false,
-      hasPricedClass: false,
-      hasFreeClass: false,
-    };
-    stream.emit(clientMutationId, {
-      type: "removeCart",
-      message: "The item is removed from cart successfully!",
-      cart: newCart,
-      cartItem: {
-        cartId: null,
-      },
-    });
-  }
+  const multi = redis.multi();
+
+  // Add DEL commands for the keys within the transaction
+  multi.del(cartSessionId);
+  multi.del(cartItemsSessionId);
+
+  // Execute the transaction using exec()
+  multi.exec((err, results) => {
+    if (err) {
+      console.error("Error deleting keys:", err);
+    } else {
+      // results is an array of replies for each DEL command
+      console.log(`Deleted ${results[0]} keys with ${cartSessionId}`);
+      console.log(`Deleted ${results[1]} keys with ${cartItemsSessionId}`);
+
+      console.log("sending notification");
+      const newCart = {
+        pi: null,
+        coupons: [],
+        subtotal: 0,
+        taxValue: 0,
+        totalDiscount: 0,
+        hasProducts: false,
+        hasPricedClass: false,
+        hasFreeClass: false,
+      };
+      stream.emit(clientId, {
+        type: "removeCart",
+        message: "The item is removed from cart successfully!",
+        cart: newCart,
+        cartItem: {
+          cartId: null,
+        },
+      });
+    }
+  });
 }
-
-// async function clearCart(clientMutationId, wooSessionId) {
-//   const cart = new Cart();
-//   cart.clearCart(null, wooSessionId);
-//
-//   const results = await clearCartSession(clientMutationId);
-//   await resetShippingCharges(clientMutationId, null);
-//
-//   if (results) {
-//     const newCart = {
-//       pi: null,
-//       coupons: [],
-//       subtotal: 0,
-//       taxValue: 0,
-//       totalDiscount: 0,
-//       hasProducts: false,
-//       hasPricedClass: false,
-//       hasFreeClass: false,
-//     };
-//     stream.emit(clientMutationId, {
-//       type: "removeCart",
-//       message: "The item is removed from cart successfully!",
-//       cart: newCart,
-//       cartItem: {
-//         cartId: null,
-//       },
-//     });
-//
-//     return true;
-//   }
-// }
 
 const removeCartItemMutation = async (payload) => {
   console.log("evenEmitter.removeCart.payload", payload);
 
-  const { clientMutationId, wooSessionId, cartItemId } = payload;
+  const { clientId, clientMutationId, wooSessionId, cartItemId } = payload;
 
   const result = await removeCartItemWpgraphql(payload);
   console.log("result", result);
 
   if (result.error) {
     const results = await removeCartItemSession(
+      clientId,
       clientMutationId,
       wooSessionId,
       cartItemId,
       result,
     );
-    // if (result.clearSession) {
-    //   await clearCartSession(clientMutationId);
-    // } else {
-    // }
   } else if (result.response) {
-    if (result.response.clearCart) {
-      await clearCartSession(clientMutationId);
+    if (result.response.cartIsEmpty) {
+      await clearCartSession(clientId, clientMutationId);
       // await clearCart(clientMutationId, wooSessionId);
     } else {
       const results = await removeCartItemSession(
+        clientId,
         clientMutationId,
         wooSessionId,
         cartItemId,
@@ -933,7 +755,6 @@ async function removeCartHandler(request, response, next) {
   const payload = request.body;
   console.log("removeCart.payload", payload);
 
-  // recordClientAction(payload.clientMutationId, "BeginRemoveCart", payload);
   stream.emit("removeCart", payload);
 
   response.json({
@@ -942,43 +763,71 @@ async function removeCartHandler(request, response, next) {
   });
 }
 
-// async function clearCartHandler(request, response, next) {
-//   const payload = request.body;
-//   console.log("clearCart.payload", payload);
-//
-//   stream.emit("clearCart", payload);
-//
-//   response.json({
-//     error: null,
-//     success: true,
-//   });
-//   // const cartItems = await redis.get(payload.cartItemSessionId)
-// }
-
 async function eventsHandler(request, response, next) {
+  const origin = request.headers.origin;
+  console.log("origin", origin);
+  console.log("host", request.headers.host);
+  console.log("method", request.method);
+
+  if (request.method === "OPTIONS") {
+    const headers = {
+      "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    };
+    response.writeHead(200, headers);
+    return;
+  }
+
   const headers = {
     "Content-Type": "text/event-stream",
     Connection: "keep-alive",
-    "Cache-Control": "no-cache,no-transform",
+    "Cache-Control": "no-cache",
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": "true",
   };
 
   response.writeHead(200, headers);
 
-  const encoder = new TextEncoder();
+  // const encoder = new TextEncoder();
+  // response.setHeader("Content-Type", "text/event-stream");
+  // response.setHeader("Cache-Control", "no-cache");
+  // response.setHeader("Connection", "keep-alive");
+  // response.setHeader("Access-Control-Allow-Origin", "*");
+  // response.setHeader(
+  //   "Access-Control-Allow-Methods",
+  //   "GET,OPTIONS,PATCH,DELETE,POST,PUT",
+  // );
+  //
+  // response.setHeader("Access-Control-Allow-Headers", "*");
+  // // response.setHeader("Access-Control-Allow-Credentials", "true");
+  // response.writeHead(200, headers);
 
   function eventListener(event, data) {
     console.log("event", event);
     // console.log("event.data", data);
 
-    response.write(
-      encoder.encode(
-        `event: ${request.params.id}\ndata: ${JSON.stringify(event)}\n\n`,
-      ),
-    );
+    response.write(`data: ${JSON.stringify(event)}\n\n`);
+    //client.write(`data: ${JSON.stringify(eventData)}\n\n`);
+
+    // response.flush();
   }
 
   const clientId = request.params.id;
   if (!nodeCache.has(clientId)) {
+    stream.on(clientId, eventListener);
+
+    request.on("close", () => {
+      console.log(`Connection closed`, clientId);
+      stream.off(clientId, eventListener);
+      response.end();
+
+      nodeCache.del(clientId);
+      // clients = clients.filter((c) => c.id !== clientId);
+      // stream.off("channel", eventListener);
+    });
+
     nodeCache.set(clientId, {
       at: new Date(),
     });
@@ -992,12 +841,15 @@ async function eventsHandler(request, response, next) {
     //   isBot: isbot(request.headers),
     // };
     //
-    // recordClientAction(clientId, "NewClient", payload);
     console.log("New client client id:", clientId);
+    // console.log("headers", JSON.stringify(request.headers, null, 2));
+    // console.log("isBot", isbot(request.get("user-agent")));
+    console.log("clients.counts", nodeCache.keys().length);
+  } else {
+    console.log("Client is already exists", clientId);
   }
 
   // stream.off("channel", eventListener);
-  stream.on(request.params.id, eventListener);
 
   // redis
   //   .pipeline()
@@ -1011,25 +863,29 @@ async function eventsHandler(request, response, next) {
   //       payload: { cart: cart[0], cartItems: cartItems[1] || [] },
   //     });
   //   });
-
-  request.on("close", () => {
-    console.log(`Connection closed`, clientId);
-    stream.off(clientId, eventListener);
-    response.end();
-
-    nodeCache.del(clientId);
-    // clients = clients.filter((c) => c.id !== clientId);
-    // stream.off("channel", eventListener);
-  });
 }
+
+// Middleware to check for bot user agents
+app.use((req, res, next) => {
+  const userAgent = req.get("user-agent");
+  console.log("userAgent", userAgent);
+
+  if (isbot(userAgent)) {
+    console.log("bot request, skipping");
+    // Handle bot request here
+    // For example, you can send a 403 Forbidden response
+    res.status(403).send("Access denied for bots");
+  } else {
+    // Continue with the normal flow if not a bot
+    next();
+  }
+});
 
 app.get("/api/sse/:id", eventsHandler);
 
 app.post("/api/addToCart", function (req, res) {
   const payload = req.body;
   console.log("addToCart.handler.payload", payload);
-
-  // recordClientAction(payload.clientMutationId, "BeginAddToCart", payload);
 
   stream.emit("addToCart", payload);
 
@@ -1043,33 +899,7 @@ app.post("/api/removeCart", removeCartHandler);
 // app.post("/api/clearCart", clearCartHandler);
 
 app.get("/api/status", function (request, response, next) {
-  // const allClient = nodeCache.keys().map((k) => {
-  //   const value = nodeCache.get(k);
-  //   return { id: k, actions: value };
-  // });
-
   response.json({
     message: "ready",
-    // clients: [],
   });
 });
-
-// app.get("/api/getSessionId", function (request, response, next) {
-//   console.log("request.headers", request.headers);
-//   console.log("request.cookies", request.cookies);
-//   const session = request.session.user;
-//
-//   console.log("session", session);
-//   let sessionId = session ? request.sessionID : null;
-//   response.json({
-//     sessionId,
-//   });
-// });
-//
-// app.get("/api/setSession", function (request, response, next) {
-//   request.session.user = { user: "test@yahoo.com" };
-//
-//   response.json({
-//     sessionId: request.sessionID,
-//   });
-// });
