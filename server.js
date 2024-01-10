@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import EventEmitter from "events";
 import { Redis } from "ioredis";
-// import { isbot } from "isbot";
+import { isbot } from "isbot";
 import NodeCache from "node-cache";
 
 import { Cart, SimplurConfig } from "@simplur/netlify-functions-helper";
@@ -831,6 +831,7 @@ async function eventsHandler(request, response, next) {
     //
     console.log("New client client id:", clientId);
     console.log("headers", JSON.stringify(request.headers, null, 2));
+    console.log("isBot", isbot(request.get("user-agent")));
     console.log("clients.counts", nodeCache.keys.length);
   } else {
     console.log("Client is already exists", clientId);
