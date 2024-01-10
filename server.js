@@ -843,7 +843,7 @@ async function eventsHandler(request, response, next) {
     //
     console.log("New client client id:", clientId);
     // console.log("headers", JSON.stringify(request.headers, null, 2));
-    // console.log("isBot", isbot(request.get("user-agent")));
+    console.log("isBot", isbot(request.get("user-agent")));
     console.log("clients.counts", nodeCache.keys().length);
   } else {
     console.log("Client is already exists", clientId);
@@ -866,20 +866,20 @@ async function eventsHandler(request, response, next) {
 }
 
 // Middleware to check for bot user agents
-app.use((req, res, next) => {
-  const userAgent = req.get("user-agent");
-  console.log("userAgent", userAgent);
-
-  if (isbot(userAgent)) {
-    console.log("bot request, skipping");
-    // Handle bot request here
-    // For example, you can send a 403 Forbidden response
-    res.status(403).send("Access denied for bots");
-  } else {
-    // Continue with the normal flow if not a bot
-    next();
-  }
-});
+// app.use((req, res, next) => {
+//   const userAgent = req.get("user-agent");
+//   console.log("userAgent", userAgent);
+//
+//   if (isbot(userAgent)) {
+//     console.log("bot request, skipping");
+//     // Handle bot request here
+//     // For example, you can send a 403 Forbidden response
+//     res.status(403).send("Access denied for bots");
+//   } else {
+//     // Continue with the normal flow if not a bot
+//     next();
+//   }
+// });
 
 app.get("/api/sse/:id", eventsHandler);
 
