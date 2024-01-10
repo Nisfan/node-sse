@@ -818,6 +818,16 @@ async function eventsHandler(request, response, next) {
   if (!nodeCache.has(clientId)) {
     stream.on(clientId, eventListener);
 
+    request.on("close", () => {
+      console.log(`Connection closed`, clientId);
+      stream.off(clientId, eventListener);
+      response.end();
+
+      nodeCache.del(clientId);
+      // clients = clients.filter((c) => c.id !== clientId);
+      // stream.off("channel", eventListener);
+    });
+
     nodeCache.set(clientId, {
       at: new Date(),
     });
@@ -853,16 +863,6 @@ async function eventsHandler(request, response, next) {
   //       payload: { cart: cart[0], cartItems: cartItems[1] || [] },
   //     });
   //   });
-
-  request.on("close", () => {
-    console.log(`Connection closed`, clientId);
-    stream.off(clientId, eventListener);
-    response.end();
-
-    nodeCache.del(clientId);
-    // clients = clients.filter((c) => c.id !== clientId);
-    // stream.off("channel", eventListener);
-  });
 }
 
 app.get("/api/sse/:id", eventsHandler);
