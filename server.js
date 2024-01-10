@@ -816,6 +816,8 @@ async function eventsHandler(request, response, next) {
 
   const clientId = request.params.id;
   if (!nodeCache.has(clientId)) {
+    stream.on(clientId, eventListener);
+
     nodeCache.set(clientId, {
       at: new Date(),
     });
@@ -838,7 +840,6 @@ async function eventsHandler(request, response, next) {
   }
 
   // stream.off("channel", eventListener);
-  stream.on(request.params.id, eventListener);
 
   // redis
   //   .pipeline()
