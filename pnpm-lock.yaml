@@ -6,8 +6,8 @@ settings:
 
 dependencies:
   '@simplur/netlify-functions-helper':
-    specifier: 0.0.73-next-js.0
-    version: 0.0.73-next-js.0(@woocommerce/woocommerce-rest-api@1.0.1)(axios@1.5.1)(stripe@14.11.0)
+    specifier: 0.0.77-next-js.0
+    version: 0.0.77-next-js.0(@woocommerce/woocommerce-rest-api@1.0.1)(axios@1.5.1)(stripe@14.11.0)
   async-mutex:
     specifier: ^0.4.0
     version: 0.4.0
@@ -90,8 +90,8 @@ packages:
       '@sentry/types': 7.75.1
     dev: false
 
-  /@simplur/netlify-functions-helper@0.0.73-next-js.0(@woocommerce/woocommerce-rest-api@1.0.1)(axios@1.5.1)(stripe@14.11.0):
-    resolution: {integrity: sha512-QONhU4JFFqxV2rLbjV6QbxmeL268wT8gfddBlQc/Yuhdxg1egPB9blpJfr4989yRqEn9RlBVYeKGnD+lqpm7QA==}
+  /@simplur/netlify-functions-helper@0.0.77-next-js.0(@woocommerce/woocommerce-rest-api@1.0.1)(axios@1.5.1)(stripe@14.11.0):
+    resolution: {integrity: sha512-dTyLEwRy87SmOuQmQaDdf8dLFewP1I+4ePDCCZZ44ScQYJ7vUZaXUzejbdAvCkjcdoY+tEBWNIVjuMw9B5xv6Q==}
     peerDependencies:
       '@woocommerce/woocommerce-rest-api': ^1.0.1
       axios: ^1.1.2

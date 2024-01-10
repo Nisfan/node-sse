@@ -830,6 +830,7 @@ async function eventsHandler(request, response, next) {
     // };
     //
     console.log("New client client id:", clientId);
+    console.log("clients.counts", nodeCache.keys.length);
   }
 
   // stream.off("channel", eventListener);
