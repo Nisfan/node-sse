@@ -227,12 +227,23 @@ async function addToCartMutation(data) {
 
       const { cartItem } = cartResponse;
 
+      let name = cartItem?.name ? cartItem.name : cartItemToAdd.name;
+      if (
+        cartItemToAdd.variation &&
+        cartItemToAdd.variation.attributes.length > 1
+      ) {
+        name =
+          cartItemToAdd.variation.attributes[
+            cartItemToAdd.variation.attributes.length - 1
+          ].attributeValue;
+      }
+
       const newCartItem = {
         id: cartItemToAdd.id,
         cartId: cartItem.cartId,
         quantity: cartItem.quantity,
         price: cartItem.price,
-        name: cartItemToAdd.name,
+        name,
         slug: cartItemToAdd.slug,
         taxClass: cartItem.taxClass,
         // stockQuantity: cartItem.stockQuantity,
