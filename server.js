@@ -190,7 +190,13 @@ async function addToCartMutation(data) {
   try {
     const cartItems = await getCartItems(cartItemsSessionId);
 
-    const paymentIntentId = cartItems.length > 0 ? data.paymentIntentId : null;
+    let paymentIntentId = data.paymentIntentId;
+    let wooSessionId = data.wooSessionId;
+    if (cartItems.length === 0) {
+      paymentIntentId = null;
+      wooSessionId = null;
+    }
+
     let cartResponse = null;
     if (cartItemToAdd.variation) {
       const addToCartVariableItem = {
@@ -198,7 +204,7 @@ async function addToCartMutation(data) {
         quantity: cartItemToAdd.quantity,
         clientMutationId: data.clientMutationId,
         paymentIntentId: paymentIntentId,
-        wooSessionId: data.wooSessionId,
+        wooSessionId: wooSessionId,
         variation: cartItemToAdd.variation,
       };
 
@@ -209,7 +215,7 @@ async function addToCartMutation(data) {
         quantity: cartItemToAdd.quantity,
         clientMutationId: data.clientMutationId,
         paymentIntentId: paymentIntentId,
-        wooSessionId: data.wooSessionId,
+        wooSessionId: wooSessionId,
         manufacturerCustomFields: null,
       };
 
